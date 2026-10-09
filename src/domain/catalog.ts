@@ -170,6 +170,19 @@ export const CONDITIONS = opts([
   ['sleep-apnea', 'Sleep apnea'],
 ]);
 
+/** Family history items that change how the app interprets symptoms or checks medicines. */
+export const FAMILY_HISTORY = opts([
+  ['migraine', 'Migraine'],
+  ['migraine-aura', 'Migraine with aura'],
+  ['hemiplegic-migraine', 'Hemiplegic migraine (weakness with attacks)'],
+  ['early-stroke', 'Stroke before age 55 (men) or 65 (women)'],
+  ['early-heart-attack', 'Heart attack before age 55 (men) or 65 (women)'],
+  ['clotting-disorder', 'Blood clotting disorder or clots (DVT/PE)'],
+  ['aneurysm', 'Brain aneurysm or brain bleed'],
+  ['epilepsy', 'Epilepsy'],
+  ['depression-anxiety', 'Depression or anxiety'],
+]);
+
 export interface CatalogMedication {
   name: string;
   cls: MedicationClass;
@@ -231,6 +244,9 @@ export const MEDICATION_CATALOG: CatalogMedication[] = [
   { name: 'Selegiline', cls: 'maoi', role: 'other' },
   { name: 'Combined oral contraceptive (estrogen + progestin)', cls: 'hormonal-contraceptive-combined', role: 'other' },
   { name: 'Progestin-only contraceptive', cls: 'hormonal-contraceptive-progestin', role: 'other' },
+  { name: 'Nitroglycerin / isosorbide', cls: 'nitrate', role: 'other' },
+  { name: 'Sildenafil / tadalafil', cls: 'pde5-inhibitor', role: 'other' },
+  { name: 'Pseudoephedrine / oxymetazoline', cls: 'decongestant', role: 'other' },
   { name: 'Warfarin', cls: 'anticoagulant', role: 'other' },
   { name: 'Apixaban / Rivaroxaban', cls: 'anticoagulant', role: 'other' },
 ];
@@ -258,6 +274,9 @@ export const MEDICATION_CLASS_LABELS: Record<MedicationClass, string> = {
   'hormonal-contraceptive-combined': 'Combined hormonal contraceptive',
   'hormonal-contraceptive-progestin': 'Progestin-only contraceptive',
   anticoagulant: 'Anticoagulant',
+  nitrate: 'Nitrate',
+  'pde5-inhibitor': 'PDE5 inhibitor',
+  decongestant: 'Decongestant',
   other: 'Other',
 };
 

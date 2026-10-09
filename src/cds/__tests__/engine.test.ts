@@ -152,3 +152,16 @@ describe('risk model', () => {
     expect(evaluate(emptyState(), TODAY).length).toBeGreaterThan(0);
   });
 });
+
+describe('family history and other medicines', () => {
+  it('sends family-history findings to the clinician view only', () => {
+    const s = withAttacks([attack(TODAY, { symptoms: ['aura-visual'] })], []);
+    s.profile.familyHistory = [{ condition: 'early-stroke', relatives: ['father'] }];
+    const rec = evaluate(s, TODAY).find((r) => r.id === 'fh-vascular-aura');
+    expect(rec?.audience).toBe('clinician');
+  });
+  it('notes non-migraine medicines that can cause headache', () => {
+    const nitrate: Medication = { id: 'n', name: 'Nitroglycerin', cls: 'nitrate', role: 'other', active: true };
+    expect(evaluate(withAttacks([], [nitrate]), TODAY).some((r) => r.id === 'med-induced-headache')).toBe(true);
+  });
+});

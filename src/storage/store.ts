@@ -9,7 +9,7 @@ const KEY = 'aura:v1';
 export function emptyState(): AppState {
   return {
     version: 1,
-    profile: { sex: 'unspecified', conditions: [] },
+    profile: { sex: 'unspecified', conditions: [], familyHistory: [] },
     patterns: { triggers: [], customTriggers: [], alleviators: [], exacerbators: [], warningSigns: [] },
     medications: [],
     supplements: [],

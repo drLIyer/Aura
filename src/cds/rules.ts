@@ -552,6 +552,74 @@ export const interactionRule: Rule = (ctx) => {
 };
 
 // ---------------------------------------------------------------------------------------
+// Other medicines that can cause headache, and family history (clinician view)
+
+export const otherMedicationRule: Rule = (ctx) => {
+  const causes = ctx.activeMeds.filter((m) => ['nitrate', 'pde5-inhibitor', 'decongestant'].includes(m.cls));
+  if (!causes.length) return [];
+  return [
+    {
+      id: 'med-induced-headache',
+      severity: 'info',
+      category: 'interaction',
+      title: 'Some of your other medicines can cause headaches',
+      detail: `${causes.map((m) => m.name).join(', ')} can trigger headaches in some people. Mention this to your doctor, and don't stop a prescribed medicine on your own.`,
+      sources: ['ichd-3'],
+    },
+  ];
+};
+
+export const familyHistoryRule: Rule = (ctx) => {
+  const out: Recommendation[] = [];
+  const fh = new Set(ctx.state.profile.familyHistory.map((f) => f.condition));
+  if (fh.has('hemiplegic-migraine')) {
+    out.push({
+      id: 'fh-hemiplegic',
+      severity: ctx.state.attacks.some((a) => a.symptoms.includes('aura-motor')) ? 'warning' : 'info',
+      category: 'safety',
+      audience: 'clinician',
+      title: 'Family history of hemiplegic migraine',
+      detail: 'Consider familial hemiplegic migraine if the patient has weakness with aura. Triptans and ergots have traditionally been avoided in hemiplegic migraine.',
+      sources: ['ichd-3'],
+    });
+  }
+  if (fh.has('clotting-disorder') && has(ctx, 'hormonal-contraceptive-combined')) {
+    out.push({
+      id: 'fh-clotting-estrogen',
+      severity: 'warning',
+      category: 'interaction',
+      audience: 'clinician',
+      title: 'Family history of clotting disorder with estrogen use',
+      detail: 'A first-degree relative with venous thromboembolism or a thrombophilia raises clot risk on estrogen. Review contraception choice.',
+      sources: ['cdc-us-mec'],
+    });
+  }
+  const vascular = ['early-stroke', 'early-heart-attack', 'clotting-disorder'].filter((c) => fh.has(c));
+  if (vascular.length && ctx.state.attacks.some(hasAura)) {
+    out.push({
+      id: 'fh-vascular-aura',
+      severity: 'info',
+      category: 'safety',
+      audience: 'clinician',
+      title: 'Migraine with aura and family vascular history',
+      detail: `Family history: ${vascular.join(', ').replace(/-/g, ' ')}. Migraine with aura is associated with about twice the risk of ischaemic stroke. Review modifiable factors (smoking, estrogen, blood pressure, lipids).`,
+      sources: ['cdc-us-mec'],
+    });
+  }
+  if (ctx.state.profile.smoking === 'current' && ctx.state.attacks.some(hasAura)) {
+    out.push({
+      id: 'smoking-aura',
+      severity: 'info',
+      category: 'safety',
+      title: 'Support to stop smoking',
+      detail: 'Stopping smoking is one of the most helpful things for long-term health with migraine with aura. Ask your doctor about support to quit.',
+      sources: ['cdc-us-mec'],
+    });
+  }
+  return out;
+};
+
+// ---------------------------------------------------------------------------------------
 // Supplements
 
 export const supplementRule: Rule = (ctx) => {
@@ -807,6 +875,8 @@ export const RULES: Rule[] = [
   preventionRule,
   acuteTreatmentRule,
   interactionRule,
+  otherMedicationRule,
+  familyHistoryRule,
   supplementRule,
   patternRule,
   wearableRule,

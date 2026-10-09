@@ -87,10 +87,14 @@ export type MedicationClass =
   | 'hormonal-contraceptive-combined'
   | 'hormonal-contraceptive-progestin'
   | 'anticoagulant'
+  | 'nitrate'
+  | 'pde5-inhibitor'
+  | 'decongestant'
   | 'other';
 
 export type MedicationRole = 'acute' | 'preventive' | 'other';
 
+/** Any medicine the patient takes, migraine-related or not — interactions often involve the others. */
 export interface Medication {
   id: string;
   name: string;
@@ -98,6 +102,12 @@ export interface Medication {
   role: MedicationRole;
   dose?: string;
   frequency?: string;
+  /** Taken on a schedule, or only when needed. */
+  schedule?: 'regular' | 'as-needed';
+  /** What it is taken for, in the patient's words. */
+  reason?: string;
+  prescriber?: string;
+  overTheCounter?: boolean;
   startDate?: ISODate;
   active: boolean;
 }
@@ -113,6 +123,17 @@ export interface Supplement {
   active: boolean;
 }
 
+export type Relative = 'mother' | 'father' | 'sibling' | 'child' | 'grandparent' | 'other';
+
+export interface FamilyHistoryItem {
+  /** Id from catalog FAMILY_HISTORY. */
+  condition: string;
+  relatives: Relative[];
+  /** Age at onset where relevant (e.g. early stroke or heart attack). */
+  ageAtOnset?: number;
+  notes?: string;
+}
+
 export type Sex = 'female' | 'male' | 'intersex' | 'unspecified';
 
 export interface PatientProfile {
@@ -126,6 +147,8 @@ export interface PatientProfile {
   conditions: string[];
   /** Year migraines began — a new headache pattern after 50 is a red flag. */
   migraineOnsetYear?: number;
+  smoking?: 'never' | 'former' | 'current';
+  familyHistory: FamilyHistoryItem[];
 }
 
 export type TriggerLikelihood = 'unsure' | 'sometimes' | 'often' | 'almost-always';
@@ -222,4 +245,9 @@ export interface Recommendation {
   detail: string;
   /** Ids from the guideline registry (src/domain/guidelines.ts) this recommendation is based on. */
   sources: string[];
+  /**
+   * Who sees it. Risk-factor detail is for the clinician; the patient sees practical prompts
+   * and only true emergencies as urgent. Defaults to both.
+   */
+  audience?: 'patient' | 'clinician' | 'both';
 }

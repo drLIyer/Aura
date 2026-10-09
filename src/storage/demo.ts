@@ -135,7 +135,7 @@ export function demoState(today: string = toISODate(new Date()), days = 120): Ap
 
   return {
     version: 1,
-    profile: { name: 'Demo patient', birthYear: 1990, sex: 'female', childbearingPotential: true, conditions: [], migraineOnsetYear: 2006 },
+    profile: { name: 'Demo patient', birthYear: 1990, sex: 'female', childbearingPotential: true, conditions: [], migraineOnsetYear: 2006, smoking: 'never', familyHistory: [{ condition: 'migraine', relatives: ['mother'] }] },
     patterns: {
       completedAt: new Date(parseISODate(start)).toISOString(),
       typicalMigraineDaysPerMonth: 5,
