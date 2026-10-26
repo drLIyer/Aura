@@ -1,0 +1,294 @@
+import { describe, expect, it } from 'vitest';
+import { addDays } from '../../domain/dates';
+import type { AppState, Attack, Medication } from '../../domain/types';
+import { demoState } from '../../demo';
+import { emptyState } from '../../state';
+import { evaluate } from '../engine';
+import { relativeRisk, analyzeTriggers, menstrualPattern, tracksMenstrualCycle } from '../patterns';
+import { overuseStatus } from '../rules';
+import { backtest, fitRiskModel, forecast } from '../riskModel';
+import { GUIDELINES } from '../../domain/guidelines';
+
+const TODAY = '2026-10-09';
+
+const attack = (date: string, extra: Partial<Attack> = {}): Attack => ({
+  id: `a-${date}-${Math.random()}`,
+  start: `${date}T10:00:00`,
+  end: `${date}T18:00:00`,
+  peakSeverity: 6,
+  painLocations: [],
+  painQualities: [],
+  symptoms: [],
+  worsenedByActivity: true,
+  triggers: [],
+  alleviators: [],
+  exacerbators: [],
+  doses: [],
+  disability: 'mild',
+  redFlags: [],
+  ...extra,
+});
+
+const triptan: Medication = { id: 'trip', name: 'Sumatriptan', cls: 'triptan', role: 'acute', active: true };
+const ibuprofen: Medication = { id: 'ibu', name: 'Ibuprofen', cls: 'nsaid', role: 'acute', active: true };
+
+function withAttacks(attacks: Attack[], meds: Medication[] = [triptan, ibuprofen]): AppState {
+  return { ...emptyState(), attacks, medications: meds };
+}
+
+describe('red flags', () => {
+  it('raises an urgent recommendation for a thunderclap headache', () => {
+    const recs = evaluate(withAttacks([attack(TODAY, { redFlags: ['thunderclap'] })]), TODAY);
+    expect(recs[0].severity).toBe('urgent');
+    expect(recs[0].sources).toContain('snnoop10');
+  });
+
+  it('only shows the emergency prompt for recent red flags', () => {
+    const recs = evaluate(withAttacks([attack(addDays(TODAY, -6), { redFlags: ['thunderclap'] })]), TODAY);
+    expect(recs.some((r) => r.severity === 'urgent')).toBe(false);
+    expect(recs.some((r) => r.id === 'red-flag-review')).toBe(true);
+  });
+
+  it('flags aura longer than 60 minutes', () => {
+    const recs = evaluate(withAttacks([attack(TODAY, { auraMinutes: 90 })]), TODAY);
+    expect(recs.some((r) => r.id === 'prolonged-aura')).toBe(true);
+  });
+});
+
+describe('medication overuse (ICHD-3 8.2)', () => {
+  const triptanDays = (n: number) =>
+    Array.from({ length: n }, (_, i) => {
+      const d = addDays(TODAY, -i * 2);
+      return attack(d, { doses: [{ medicationId: 'trip', takenAt: `${d}T10:30:00` }] });
+    });
+
+  it('counts triptan days against the 10-day limit', () => {
+    expect(overuseStatus(withAttacks(triptanDays(10)), TODAY).overused).toEqual(['triptan']);
+    expect(overuseStatus(withAttacks(triptanDays(9)), TODAY).overused).toEqual([]);
+  });
+
+  it('uses the 15-day limit for NSAIDs', () => {
+    const nsaid = Array.from({ length: 12 }, (_, i) => {
+      const d = addDays(TODAY, -i * 2);
+      return attack(d, { doses: [{ medicationId: 'ibu', takenAt: `${d}T10:30:00` }] });
+    });
+    const s = overuseStatus(withAttacks(nsaid), TODAY);
+    expect(s.overused).toEqual([]);
+    expect(s.multipleClassOveruse).toBe(true); // ≥10 total acute days is still flagged
+  });
+
+  it('recommends a warning when over the limit', () => {
+    const recs = evaluate(withAttacks(triptanDays(11)), TODAY);
+    expect(recs.find((r) => r.id === 'moh')?.severity).toBe('warning');
+  });
+});
+
+describe('prevention (AAN/AHS 2026)', () => {
+  it('is offered at 4 migraine days a month without a preventive', () => {
+    const recs = evaluate(withAttacks([0, 5, 10, 15].map((d) => attack(addDays(TODAY, -d)))), TODAY);
+    expect(recs.some((r) => r.id === 'prevention-indicated')).toBe(true);
+  });
+  it('is not offered at 3 mild migraine days', () => {
+    const recs = evaluate(withAttacks([0, 5, 10].map((d) => attack(addDays(TODAY, -d)))), TODAY);
+    expect(recs.some((r) => r.id === 'prevention-indicated')).toBe(false);
+  });
+});
+
+describe('interactions', () => {
+  it('warns about combined hormonal contraception with aura', () => {
+    const chc: Medication = { id: 'c', name: 'COC', cls: 'hormonal-contraceptive-combined', role: 'other', active: true };
+    const recs = evaluate(withAttacks([attack(TODAY, { symptoms: ['aura-visual'] })], [chc]), TODAY);
+    expect(recs.some((r) => r.id === 'chc-aura')).toBe(true);
+  });
+  it('warns about triptans with coronary disease', () => {
+    const s = withAttacks([], [triptan]);
+    s.profile.conditions = ['coronary-disease'];
+    expect(evaluate(s, TODAY).some((r) => r.id === 'triptan-vascular')).toBe(true);
+  });
+});
+
+describe('every recommendation cites the registry', () => {
+  it('only uses known guideline ids', () => {
+    const ids = new Set(GUIDELINES.map((g) => g.id));
+    for (const r of evaluate(demoState(TODAY), TODAY)) {
+      expect(r.sources.length).toBeGreaterThan(0);
+      for (const s of r.sources) expect(ids.has(s), `${r.id} cites unknown ${s}`).toBe(true);
+    }
+  });
+});
+
+describe('pattern analysis', () => {
+  it('computes relative risk with continuity correction', () => {
+    const { rr } = relativeRisk(5, 10, 5, 50);
+    expect(rr).toBeCloseTo((5.5 / 11) / (5.5 / 51), 5);
+  });
+
+  it('recovers the planted triggers in demo data', () => {
+    const s = demoState(TODAY);
+    const top = analyzeTriggers(s).filter((t) => t.relativeRisk > 1.5).map((t) => t.trigger);
+    expect(top).toEqual(expect.arrayContaining(['late-meal', 'menstruation']));
+    expect(menstrualPattern(s)?.cycles).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe('risk model', () => {
+  it('lets personal data override a strong self-reported belief', () => {
+    const s = demoState(TODAY);
+    const w = fitRiskModel(s).weights.get('chocolate');
+    // The demo patient believes chocolate is a trigger but never logs it, so no data: belief stays.
+    expect(w?.personalWeight).toBe(0);
+    const lateMeal = fitRiskModel(s).weights.get('late-meal')!;
+    expect(lateMeal.personalWeight).toBeGreaterThan(0.3);
+    expect(lateMeal.rr).toBeGreaterThan(lateMeal.researchRR);
+  });
+
+  it('produces a forecast and a backtest that beats the base rate', () => {
+    const s = demoState(TODAY);
+    const f = forecast(s, TODAY);
+    expect(f.probability).toBeGreaterThan(0);
+    expect(f.probability).toBeLessThan(1);
+    const bt = backtest(s, TODAY)!;
+    expect(bt.days).toBeGreaterThan(30);
+    expect(bt.brier).toBeLessThan(bt.brierBaseline);
+  });
+
+  it('works with no data at all', () => {
+    const f = forecast(emptyState(), TODAY);
+    expect(f.missing).toContain("today's check-in");
+    expect(evaluate(emptyState(), TODAY).length).toBeGreaterThan(0);
+  });
+});
+
+describe('family history and other medicines', () => {
+  it('sends family-history findings to the clinician view only', () => {
+    const s = withAttacks([attack(TODAY, { symptoms: ['aura-visual'] })], []);
+    s.profile.familyHistory = [{ condition: 'early-stroke', relatives: ['father'] }];
+    const rec = evaluate(s, TODAY).find((r) => r.id === 'fh-vascular-aura');
+    expect(rec?.audience).toBe('clinician');
+  });
+  it('notes non-migraine medicines that can cause headache', () => {
+    const nitrate: Medication = { id: 'n', name: 'Nitroglycerin', cls: 'nitrate', role: 'other', active: true };
+    expect(evaluate(withAttacks([], [nitrate]), TODAY).some((r) => r.id === 'med-induced-headache')).toBe(true);
+  });
+});
+
+describe('medicine changes and cycles', () => {
+  it('flags more migraine days after a new medicine', () => {
+    const start = addDays(TODAY, -40);
+    const med: Medication = { id: 'x', name: 'New pill', cls: 'other', role: 'other', active: true, startDate: start };
+    const attacks = [-35, -10, -14, -18, -22, -26, -30].map((d) => attack(addDays(TODAY, d)));
+    const recs = evaluate(withAttacks(attacks, [med]), TODAY);
+    expect(recs.some((r) => r.id === 'med-change-worse-x')).toBe(true);
+  });
+
+  it('learns cycle length from logged periods', async () => {
+    const { cycleStatus } = await import('../patterns');
+    const s = emptyState();
+    s.periods = [{ start: '2026-07-01' }, { start: '2026-08-02' }, { start: '2026-09-03' }];
+    const status = cycleStatus(s, '2026-10-03')!;
+    expect(status.averageLength).toBe(32);
+    expect(status.nextStart).toBe('2026-10-05');
+    expect(status.inHigherRiskWindow).toBe(true);
+  });
+
+  it('uses the default length when only one period is logged', async () => {
+    const { cycleStatus } = await import('../patterns');
+    const s = emptyState();
+    s.periods = [{ start: '2026-10-01' }];
+    const status = cycleStatus(s, '2026-10-09')!;
+    expect(status.lengthIsEstimated).toBe(true);
+    expect(status.averageLength).toBe(28);
+  });
+});
+
+describe('personal thresholds and devices', () => {
+  const days = (n: number) => Array.from({ length: n }, (_, i) => addDays(TODAY, -i - 2));
+
+  it('uses the person\'s own sleep-score cut-off', async () => {
+    const { exposuresByLog } = await import('../patterns');
+    const s = emptyState();
+    s.dailyLogs = [{ date: TODAY, sleepScore: 55, exposures: [], headache: false }];
+    expect(exposuresByLog(s).get(TODAY)!.has('low-sleep-score')).toBe(true);
+    s.patterns.thresholds = { sleepScoreBelow: 50 };
+    expect(exposuresByLog(s).get(TODAY)!.has('low-sleep-score')).toBe(false);
+  });
+
+  it('defaults to the device\'s own cut-off and never mixes devices', async () => {
+    const { thresholdsFor, wearableByDate } = await import('../patterns');
+    const s = emptyState();
+    s.wearableSamples = [
+      ...days(10).map((date) => ({ date, metric: 'sleepScore' as const, value: 65, source: 'apple' })),
+      { date: TODAY, metric: 'sleepScore', value: 90, source: 'fitbit' },
+    ];
+    expect(thresholdsFor(s).lowSleepScore).toBe(61); // Apple's "Low" band starts below 61
+    expect(wearableByDate(s, 'sleepScore').has(TODAY)).toBe(false); // the Fitbit reading is not mixed in
+  });
+
+  it('reads stress scores in each vendor\'s direction', async () => {
+    const { effectiveExposures } = await import('../patterns');
+    const log = { date: TODAY, exposures: [], headache: false };
+    expect(effectiveExposures(log, { stressLevel: 80 }).has('stress')).toBe(true); // Garmin: high = stressed
+    expect(effectiveExposures(log, { stressManagementScore: 80 }).has('stress')).toBe(false); // Fitbit: high = calm
+    expect(effectiveExposures(log, { stressManagementScore: 45 }).has('stress')).toBe(true);
+    expect(effectiveExposures({ ...log, stress: 2 }, { stressLevel: 90 }).has('stress')).toBe(false); // self-rating wins
+  });
+
+  it('finds the sleep-score cut-off below which attacks become more likely', async () => {
+    const { scoreBands, suggestThreshold } = await import('../patterns');
+    const s = emptyState();
+    const ds = days(60);
+    s.dailyLogs = ds.map((date, i) => ({ date, sleepScore: i % 3 === 0 ? 45 : 78, exposures: [], headache: false }));
+    s.attacks = ds.filter((_, i) => i % 3 === 0).map((d) => attack(d));
+    const bands = scoreBands(s, 'sleepScore');
+    expect(bands[0]).toMatchObject({ label: 'under 50', days: 20 });
+    expect(bands[0].attackRate).toBeGreaterThan(bands[3].attackRate);
+    expect(suggestThreshold(s, 'sleepScore')?.below).toBeLessThanOrEqual(50);
+  });
+});
+
+describe('cycle tracking eligibility', () => {
+  it('applies to females of menstruating age only', () => {
+    expect(tracksMenstrualCycle({ sex: 'female', birthYear: 1990 }, 2026)).toBe(true);
+    expect(tracksMenstrualCycle({ sex: 'female' }, 2026)).toBe(true);
+    expect(tracksMenstrualCycle({ sex: 'female', birthYear: 1960 }, 2026)).toBe(false);
+    expect(tracksMenstrualCycle({ sex: 'female', birthYear: 2020 }, 2026)).toBe(false);
+    expect(tracksMenstrualCycle({ sex: 'male', birthYear: 1990 }, 2026)).toBe(false);
+    expect(tracksMenstrualCycle({ sex: 'unspecified', birthYear: 1990 }, 2026)).toBe(false);
+    expect(tracksMenstrualCycle(undefined, 2026)).toBe(false);
+  });
+});
+
+describe('pregnancy', () => {
+  const pregnant = (meds: Medication[], attacks: Attack[] = []): AppState => ({
+    ...emptyState(),
+    profile: { ...emptyState().profile, sex: 'female', birthYear: 1992, pregnant: true },
+    medications: meds,
+    attacks,
+  });
+  const ids = (s: AppState) => evaluate(s, TODAY).map((r) => r.id);
+
+  it('pauses cycle tracking', () => {
+    expect(tracksMenstrualCycle({ sex: 'female', birthYear: 1992, pregnant: true }, 2026)).toBe(false);
+  });
+
+  it('gives an acetaminophen-first plan and flags NSAIDs, opioids and butalbital', () => {
+    const opioid: Medication = { id: 'op', name: 'Codeine / Tramadol / other opioid', cls: 'opioid', role: 'acute', active: true };
+    const r = ids(pregnant([ibuprofen, opioid]));
+    expect(r).toEqual(expect.arrayContaining(['pregnancy-acute-plan', 'pregnancy-nsaid', 'pregnancy-opioid-butalbital']));
+    expect(ids(pregnant([]))).not.toContain('pregnancy-nsaid');
+  });
+
+  it('does not flag low-dose aspirin prescribed for preeclampsia', () => {
+    const aspirin: Medication = { id: 'asa', name: 'Aspirin', cls: 'nsaid', role: 'other', dose: '81 mg', active: true };
+    expect(ids(pregnant([aspirin]))).not.toContain('pregnancy-nsaid');
+  });
+
+  it('asks for a same-day blood pressure check for a changed headache', () => {
+    expect(ids(pregnant([], [attack(TODAY, { redFlags: ['pattern-change'] })]))).toContain('pregnancy-headache-check');
+    expect(ids(pregnant([], [attack(TODAY)]))).not.toContain('pregnancy-headache-check');
+  });
+
+  it('says nothing about pregnancy otherwise', () => {
+    expect(ids(withAttacks([])).some((id) => id.startsWith('pregnancy'))).toBe(false);
+  });
+});
