@@ -52,7 +52,7 @@ export default function PeriodLogDialog({
       setValidationError('Please select an end date or uncheck the option');
       return;
     }
-    if (includeEndDate && endDate && new Date(endDate) < new Date(startDate)) {
+    if (includeEndDate && endDate && endDate < startDate) {
       setValidationError('End date must be after start date');
       return;
     }

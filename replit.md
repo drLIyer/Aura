@@ -45,16 +45,14 @@ Preferred communication style: Simple, everyday language.
 - Session-based architecture (infrastructure for connect-pg-simple session store present)
 
 **Data Layer**
-- Drizzle ORM for type-safe database queries and schema management
-- PostgreSQL as the primary database (configured for Neon serverless)
-- Schema includes tables for water logs, meal logs, supplement logs, migraine logs, cycle logs, and health metrics
-- All tables use UUID primary keys with automatic timestamp tracking
+- Drizzle ORM, PostgreSQL (Neon). Every table carries `user_id`; every query filters on the signed-in user.
+- Structured tables: profiles (health profile, family history, intake answers, time zone), medications, supplements, attacks, daily_logs, wearable_samples, midas_assessments, integrations; quick logs: water_log, meal_log, supplement_log, cycle_log.
+- Legacy tables (health_metrics, migraine_log, lifestyle_log, user_profile, migraine_predictions) are kept for `npm run db:claim-legacy`.
 
-**Business Logic Modules**
-- `cycleCalculator.ts`: Calculates current cycle phase, predicts periods, identifies high-risk PMS windows
-- `insightsGenerator.ts`: Analyzes patterns to generate personalized insights about migraine triggers
-- `migraineProbabilityCalculator.ts`: Calculates migraine probability based on health scores (readiness, sleep, stress) and cycle phase; accepts scores as parameters from database
-- `storage.ts`: Database storage with date filtering support for water, supplement logs, and health metrics trends
+**Business Logic**
+- All clinical logic lives in `shared/engine/` (pure TypeScript, unit-tested): guideline registry, rules engine, trigger analysis, cycle status (learned cycle length, day −2 to +3 window), Bayesian risk model and backtest.
+- `server/engineState.ts` builds the engine's view of one user from storage.
+- Sign-in is required on every `/api` route (`server/auth.ts`); all input is validated with zod (`shared/api.ts`).
 
 **API Design Pattern**
 - Route handlers in `routes.ts` coordinate between business logic modules and data layer

@@ -1,40 +1,34 @@
 import { Card } from "@/components/ui/card";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { formatShortDate } from "@/lib/dates";
 
-interface TrendData {
+interface TrendPoint {
   date: string;
-  readiness?: number;
-  sleep: number;
-  stress: number;
-  migraine?: number;
+  readiness: number | null;
+  sleep: number | null;
+  stress: number | null;
+  migraine: number;
 }
 
-interface TrendsChartProps {
-  data: TrendData[];
-  days?: number;
-}
-
-export default function TrendsChart({ data, days = 7 }: TrendsChartProps) {
+/** Scores (0–100) on the left axis, stress (0–10) on the right, migraine days as bars. */
+export default function TrendsChart({ data, days }: { data: TrendPoint[]; days: number }) {
+  const rows = data.map((d) => ({ ...d, label: formatShortDate(d.date), migraineBar: d.migraine ? 100 : null }));
   return (
     <Card className="p-6" data-testid="card-trends-chart">
-      <h2 className="text-lg font-semibold text-foreground mb-4">{days}-Day Trends</h2>
+      <h2 className="text-lg font-semibold text-foreground mb-4">{days}-day trends</h2>
       <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={data}>
+        <ComposedChart data={rows}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-          <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" />
-          <YAxis stroke="hsl(var(--muted-foreground))" />
-          <Tooltip 
-            contentStyle={{ 
-              backgroundColor: 'hsl(var(--card))', 
-              border: '1px solid hsl(var(--border))',
-              borderRadius: '0.5rem'
-            }}
-          />
+          <XAxis dataKey="label" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+          <YAxis yAxisId="score" domain={[0, 100]} stroke="hsl(var(--muted-foreground))" fontSize={12} />
+          <YAxis yAxisId="stress" orientation="right" domain={[0, 10]} stroke="hsl(var(--muted-foreground))" fontSize={12} />
+          <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "0.5rem" }} />
           <Legend />
-          <Line type="monotone" dataKey="readiness" stroke="hsl(var(--chart-1))" strokeWidth={2} name="Readiness" />
-          <Line type="monotone" dataKey="sleep" stroke="hsl(var(--chart-2))" strokeWidth={2} name="Sleep" />
-          <Line type="monotone" dataKey="stress" stroke="hsl(var(--chart-3))" strokeWidth={2} name="Stress" />
-        </LineChart>
+          <Bar yAxisId="score" dataKey="migraineBar" name="Migraine day" fill="hsl(var(--destructive))" fillOpacity={0.15} />
+          <Line yAxisId="score" type="monotone" dataKey="readiness" stroke="hsl(var(--chart-1))" strokeWidth={2} name="Readiness" connectNulls />
+          <Line yAxisId="score" type="monotone" dataKey="sleep" stroke="hsl(var(--chart-2))" strokeWidth={2} name="Sleep score" connectNulls />
+          <Line yAxisId="stress" type="monotone" dataKey="stress" stroke="hsl(var(--chart-5))" strokeWidth={2} name="Stress (0–10)" connectNulls />
+        </ComposedChart>
       </ResponsiveContainer>
     </Card>
   );

@@ -1,281 +1,151 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { format, addDays, subDays } from "date-fns";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import ScoreCard from "@/components/ScoreCard";
-import WaterIntakeCard from "@/components/WaterIntakeCard";
-import SupplementCard from "@/components/SupplementCard";
-import QuickActions from "@/components/QuickActions";
-import TrendsChart from "@/components/TrendsChart";
-import InsightsCard from "@/components/InsightsCard";
+import { Card } from "@/components/ui/card";
+import CheckInCard from "@/components/CheckInCard";
+import CheckInDialog from "@/components/CheckInDialog";
 import CycleTrackerCard from "@/components/CycleTrackerCard";
+import DateNav from "@/components/DateNav";
+import ForecastCard from "@/components/ForecastCard";
 import PeriodLogDialog from "@/components/PeriodLogDialog";
-import MigraineProbabilityCard from "@/components/MigraineProbabilityCard";
-import HealthScoreInput from "@/components/HealthScoreInput";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import QuickActions from "@/components/QuickActions";
+import RecommendationsCard from "@/components/RecommendationsCard";
+import SupplementCard from "@/components/SupplementCard";
+import TrendsChart from "@/components/TrendsChart";
+import UrgentBanner from "@/components/UrgentBanner";
+import WaterIntakeCard from "@/components/WaterIntakeCard";
 import { useToast } from "@/hooks/use-toast";
+import { formatLongDate, todayLocal } from "@/lib/dates";
+import { apiJson, invalidateAll } from "@/lib/queryClient";
+import type { CheckIn, CycleStatus, Forecast, ProfileRecord, QuickLog, Recommendation, Supplement } from "@/lib/types";
+import type { DailyLogInput } from "@shared/api";
+import type { LogSection, View } from "../App";
 
-import type { LogSection } from "../App";
-
-interface ParsedPeriodEntry {
-  startDate: string;
-  endDate?: string;
+interface Props {
+  date: string;
+  onDateChange: (d: string) => void;
+  onNavigate: (view: View, section?: LogSection) => void;
 }
 
-interface DashboardProps {
-  onNavigateToLog: (section: LogSection) => void;
-}
+type SupplementIntake = QuickLog & { name: string; dosage: string };
+type Water = QuickLog & { amount: number };
 
-export default function Dashboard({ onNavigateToLog }: DashboardProps) {
-  const [showPeriodDialog, setShowPeriodDialog] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(new Date());
+export default function Dashboard({ date, onDateChange, onNavigate }: Props) {
   const { toast } = useToast();
-  const dateString = format(selectedDate, 'yyyy-MM-dd');
+  const [checkInOpen, setCheckInOpen] = useState(false);
+  const [periodOpen, setPeriodOpen] = useState(false);
+  const q = `?date=${date}`;
 
-  const { data: healthMetrics } = useQuery<any>({
-    queryKey: [`/api/health/today?date=${dateString}`],
+  const { data: profile } = useQuery<ProfileRecord>({ queryKey: ["/api/profile"] });
+  const { data: forecast } = useQuery<Forecast>({ queryKey: [`/api/forecast${q}`] });
+  const { data: recs = [] } = useQuery<Recommendation[]>({ queryKey: [`/api/recommendations${q}&audience=patient`] });
+  const { data: checkIn } = useQuery<CheckIn | null>({ queryKey: [`/api/checkins/${date}`] });
+  const { data: cycle } = useQuery<CycleStatus | null>({ queryKey: [`/api/cycle/current${q}`] });
+  const { data: water = [] } = useQuery<Water[]>({ queryKey: [`/api/water${q}`] });
+  const { data: supplements = [] } = useQuery<Supplement[]>({ queryKey: ["/api/supplements"] });
+  const { data: intake = [] } = useQuery<SupplementIntake[]>({ queryKey: [`/api/supplement-intake${q}`] });
+  const { data: trends = [] } = useQuery<{ date: string; readiness: number | null; sleep: number | null; stress: number | null; migraine: number }[]>({
+    queryKey: [`/api/trends${q}&days=14`],
   });
 
-  const { data: waterLog } = useQuery<any[]>({
-    queryKey: [`/api/water?date=${dateString}`],
-  });
+  const onError = (title: string) => (e: Error) => toast({ title, description: e.message, variant: "destructive" });
 
-  const { data: supplementLog } = useQuery<any[]>({
-    queryKey: [`/api/supplements?date=${dateString}`],
-  });
-
-  const { data: trendData } = useQuery<any[]>({
-    queryKey: ['/api/health/trends?days=7'],
-  });
-
-  const { data: cyclePhase } = useQuery<any>({
-    queryKey: ['/api/cycle/current'],
-  });
-
-  const { data: insights } = useQuery<any[]>({
-    queryKey: ['/api/insights'],
-  });
-
-  const { data: migraineProbability } = useQuery<{
-    probability: number;
-    riskLevel: 'low' | 'moderate' | 'high' | 'very_high';
-    factors: { name: string; impact: 'positive' | 'negative' | 'neutral'; value: number; contribution: number; }[];
-  }>({
-    queryKey: [`/api/migraine-probability?date=${dateString}`],
-  });
-
-  const todayScores = {
-    readiness: healthMetrics?.readiness ?? undefined,
-    sleep: healthMetrics?.sleep ?? undefined,
-    stress: healthMetrics?.stress ?? undefined
-  };
-
-  const waterIntake = waterLog?.reduce((sum: number, entry: any) => sum + entry.amount, 0) ?? 0;
-  const waterGoal = 2000;
-
-  const waterEntries = waterLog?.map((entry: any) => ({
-    time: new Date(entry.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-    amount: entry.amount
-  })) ?? [];
-
-  const supplementEntries = supplementLog?.map((entry: any) => ({
-    name: entry.name
-  })) ?? [];
-
-  const trends = trendData?.map((d: any) => ({
-    date: d.date,
-    readiness: d.readiness,
-    sleep: d.sleep,
-    stress: d.stress,
-    migraine: 0
-  })) ?? [];
-
-  const displayInsights = insights ?? [
-    {
-      type: 'info' as const,
-      title: 'Welcome',
-      message: 'Start logging your water, supplements, and meals to get personalized insights!'
-    }
-  ];
-
-  const addCycleMutation = useMutation({
-    mutationFn: (data: { startDate: string; endDate?: string }) => {
-      return apiRequest('/api/cycle', 'POST', data);
-    },
+  const saveCheckIn = useMutation({
+    mutationFn: (data: DailyLogInput) => apiJson(`/api/checkins/${date}`, "PUT", data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/cycle'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/cycle/current'] });
-      setShowPeriodDialog(false);
-      toast({ title: "Period logged successfully" });
+      setCheckInOpen(false);
+      invalidateAll();
+      toast({ title: "Check-in saved" });
     },
-    onError: (error: any) => {
-      toast({ 
-        title: "Failed to log period", 
-        description: error.message || "Please try again",
-        variant: "destructive" 
-      });
-    }
+    onError: onError("Couldn't save check-in"),
   });
 
-  const saveHealthScoresMutation = useMutation({
-    mutationFn: (data: { readiness: number; sleep: number; stress: number }) => {
-      return apiRequest('/api/health', 'POST', { ...data, date: dateString });
+  const logPeriod = useMutation({
+    mutationFn: (entries: { startDate: string; endDate?: string }[]) => apiJson<{ added: number; skipped?: number }>("/api/cycle/import", "POST", { entries }),
+    onSuccess: (r, entries) => {
+      setPeriodOpen(false);
+      invalidateAll();
+      toast({ title: entries.length > 1 ? `Imported ${r.added} periods` : "Period logged", description: r.skipped ? `${r.skipped} already logged were skipped.` : undefined });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/health/today?date=${dateString}`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/migraine-probability?date=${dateString}`] });
-      toast({ title: "Health scores saved successfully" });
-    },
-    onError: (error: any) => {
-      toast({ 
-        title: "Failed to save health scores", 
-        description: error.message || "Please try again",
-        variant: "destructive" 
-      });
-    }
+    onError: onError("Couldn't log period"),
   });
 
-  const handleQuickAction = (action: string) => {
-    onNavigateToLog(action as LogSection);
-  };
+  const toggleSupplement = useMutation({
+    mutationFn: async (s: Supplement) => {
+      const existing = intake.find((i) => i.name === s.name);
+      if (existing) return apiJson(`/api/supplement-intake/${existing.id}`, "DELETE");
+      return apiJson("/api/supplement-intake", "POST", { name: s.name, dosage: s.dailyMg ? `${s.dailyMg} mg` : "", localDate: date });
+    },
+    onSuccess: () => invalidateAll(),
+    onError: onError("Couldn't update supplements"),
+  });
 
-  const handleLogPeriod = () => {
-    setShowPeriodDialog(true);
-  };
-
-  const handleLogPeriodManual = (startDate: string, endDate?: string) => {
-    addCycleMutation.mutate({ startDate, endDate });
-  };
-
-  const handleImportFromDevice = async (entries: ParsedPeriodEntry[]) => {
-    let successCount = 0;
-    for (const entry of entries) {
-      try {
-        await apiRequest('/api/cycle', 'POST', entry);
-        successCount++;
-      } catch {
-        // Continue with other entries
-      }
-    }
-    queryClient.invalidateQueries({ queryKey: ['/api/cycle'] });
-    queryClient.invalidateQueries({ queryKey: ['/api/cycle/current'] });
-    setShowPeriodDialog(false);
-    toast({ 
-      title: "Import Complete", 
-      description: `Successfully imported ${successCount} of ${entries.length} period entries.` 
-    });
-  };
-
-  const handlePreviousDay = () => {
-    setSelectedDate(prev => subDays(prev, 1));
-  };
-
-  const handleNextDay = () => {
-    const tomorrow = addDays(new Date(), 1);
-    if (addDays(selectedDate, 1) <= tomorrow) {
-      setSelectedDate(prev => addDays(prev, 1));
-    }
-  };
-
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newDate = new Date(e.target.value);
-    if (!isNaN(newDate.getTime())) {
-      setSelectedDate(newDate);
-    }
-  };
-
-  const isToday = format(selectedDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
-
-  const formattedDate = format(selectedDate, "EEEE, MMMM d, yyyy");
+  const intakeIncomplete = profile && !profile.patterns.completedAt;
+  const waterTotal = water.reduce((s, w) => s + w.amount, 0);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold" data-testid="text-dashboard-title">Dashboard</h1>
-          <p className="text-muted-foreground mt-1" data-testid="text-current-date">{formattedDate}</p>
+          <h1 className="text-3xl font-bold" data-testid="text-dashboard-title">
+            {date === todayLocal() ? "Today" : "Day view"}
+          </h1>
+          <p className="text-muted-foreground mt-1" data-testid="text-current-date">
+            {formatLongDate(date)}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button 
-            variant="outline" 
-            size="icon" 
-            onClick={handlePreviousDay}
-            data-testid="button-prev-day"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Input
-            type="date"
-            value={format(selectedDate, 'yyyy-MM-dd')}
-            onChange={handleDateChange}
-            max={format(new Date(), 'yyyy-MM-dd')}
-            className="w-40"
-            data-testid="input-date-picker"
-          />
-          <Button 
-            variant="outline" 
-            size="icon" 
-            onClick={handleNextDay}
-            disabled={isToday}
-            data-testid="button-next-day"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-          {!isToday && (
-            <Button 
-              variant="ghost" 
-              size="sm"
-              onClick={() => setSelectedDate(new Date())}
-              data-testid="button-today"
-            >
-              Today
-            </Button>
-          )}
-        </div>
+        <DateNav date={date} onChange={onDateChange} />
       </div>
+
+      <UrgentBanner recommendations={recs} />
+
+      {intakeIncomplete && (
+        <Card className="p-5 border-primary/40 bg-primary/5 flex flex-wrap items-center justify-between gap-3" data-testid="card-intake-prompt">
+          <div>
+            <h2 className="font-semibold">Tell us about your migraines</h2>
+            <p className="text-sm text-muted-foreground">What sets yours off, what helps, your early warning signs. Five minutes, and your forecast starts from your own experience.</p>
+          </div>
+          <Button onClick={() => onNavigate("patterns")}>Start</Button>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {migraineProbability && (
-          <MigraineProbabilityCard
-            probability={migraineProbability.probability}
-            riskLevel={migraineProbability.riskLevel}
-            factors={migraineProbability.factors}
-          />
-        )}
-        <HealthScoreInput
-          currentScores={todayScores}
-          onSave={(scores) => saveHealthScoresMutation.mutate(scores)}
-          isPending={saveHealthScoresMutation.isPending}
-        />
+        {forecast && <ForecastCard forecast={forecast} />}
+        <CheckInCard checkIn={checkIn} onOpen={() => setCheckInOpen(true)} />
       </div>
 
-      <QuickActions onAction={handleQuickAction} />
+      <QuickActions onAction={(a) => onNavigate("log", a as LogSection)} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <CycleTrackerCard
-          currentDay={cyclePhase?.currentDay ?? null}
-          cycleLength={cyclePhase?.cycleLength ?? null}
-          phase={cyclePhase?.phase ?? null}
-          daysUntilPeriod={cyclePhase?.daysUntilPeriod ?? null}
-          onLogPeriod={handleLogPeriod}
-        />
-        <SupplementCard supplementLog={supplementEntries} />
+        <CycleTrackerCard status={cycle} onLogPeriod={() => setPeriodOpen(true)} />
+        <SupplementCard supplements={supplements} takenNames={intake.map((i) => i.name)} onToggle={(s) => toggleSupplement.mutate(s)} onManage={() => onNavigate("medications")} />
       </div>
 
-      <WaterIntakeCard waterIntake={waterIntake} waterGoal={waterGoal} waterLog={waterEntries} />
+      <WaterIntakeCard
+        waterIntake={waterTotal}
+        waterGoal={2000}
+        waterLog={water.map((w) => ({ time: new Date(w.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), amount: w.amount }))}
+      />
 
-      {trends.length > 0 && <TrendsChart data={trends} days={7} />}
+      {trends.some((t) => t.readiness !== null || t.sleep !== null || t.stress !== null || t.migraine) && <TrendsChart data={trends} days={14} />}
 
-      <InsightsCard insights={displayInsights} />
+      <RecommendationsCard recommendations={recs.filter((r) => r.severity !== "urgent")} limit={6} />
 
+      <CheckInDialog
+        open={checkInOpen}
+        onOpenChange={setCheckInOpen}
+        date={date}
+        initial={checkIn}
+        extraExposures={profile?.patterns.customTriggers ?? []}
+        onSave={(d) => saveCheckIn.mutate(d)}
+        isSaving={saveCheckIn.isPending}
+      />
       <PeriodLogDialog
-        open={showPeriodDialog}
-        onOpenChange={setShowPeriodDialog}
-        onLogManual={handleLogPeriodManual}
-        onImportFromDevice={handleImportFromDevice}
-        isLoading={addCycleMutation.isPending}
+        open={periodOpen}
+        onOpenChange={setPeriodOpen}
+        onLogManual={(startDate, endDate) => logPeriod.mutate([{ startDate, endDate }])}
+        onImportFromDevice={(entries) => logPeriod.mutate(entries)}
+        isLoading={logPeriod.isPending}
       />
     </div>
   );

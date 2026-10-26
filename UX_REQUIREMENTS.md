@@ -1,5 +1,7 @@
 # Personalized Migraine Monitor and Predictor — UX Requirements
 
+> **Update (October 2026):** this document describes the first version. Its database schema, API, probability calculation, cycle calculation and insights sections are superseded by the decision-support engine (`shared/engine/`), the per-user schema (`shared/schema.ts`) and the API in `server/routes.ts` — see README.md. The visual design and component guidance still apply.
+
 **Version:** 1.0  
 **Date:** April 2026  
 **Status:** Reflects current build

@@ -43,6 +43,12 @@ describe('red flags', () => {
     expect(recs[0].sources).toContain('snnoop10');
   });
 
+  it('only shows the emergency prompt for recent red flags', () => {
+    const recs = evaluate(withAttacks([attack(addDays(TODAY, -6), { redFlags: ['thunderclap'] })]), TODAY);
+    expect(recs.some((r) => r.severity === 'urgent')).toBe(false);
+    expect(recs.some((r) => r.id === 'red-flag-review')).toBe(true);
+  });
+
   it('flags aura longer than 60 minutes', () => {
     const recs = evaluate(withAttacks([attack(TODAY, { auraMinutes: 90 })]), TODAY);
     expect(recs.some((r) => r.id === 'prolonged-aura')).toBe(true);

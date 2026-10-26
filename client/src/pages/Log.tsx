@@ -1,335 +1,236 @@
-import { useState, useEffect, useRef } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { Droplets, Utensils, Activity, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
-import { format, addDays, subDays } from "date-fns";
-import LoggingPanel from "@/components/LoggingPanel";
-import MigraineLogForm from "@/components/MigraineLogForm";
-import PeriodLogDialog from "@/components/PeriodLogDialog";
-import { queryClient, apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Activity, Calendar, Droplets, Utensils } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { LogSection } from "../App";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import AttackForm from "@/components/AttackForm";
+import DateNav from "@/components/DateNav";
+import LoggingPanel from "@/components/LoggingPanel";
+import PeriodLogDialog from "@/components/PeriodLogDialog";
+import { useToast } from "@/hooks/use-toast";
+import { formatLocalDateTime, nowLocalTime, parseLocalDate, todayLocal } from "@/lib/dates";
+import { apiJson, invalidateAll } from "@/lib/queryClient";
+import type { Attack, Medication, Period, ProfileRecord, QuickLog, Supplement } from "@/lib/types";
+import type { AttackInput } from "@shared/api";
+import type { LogSection, View } from "../App";
 
-interface ParsedPeriodEntry {
-  startDate: string;
-  endDate?: string;
-}
+type Water = QuickLog & { amount: number };
+type Meal = QuickLog & { type: string; localTime: string | null };
+type Intake = QuickLog & { name: string; dosage: string };
 
-interface LogProps {
+interface Props {
+  date: string;
+  onDateChange: (d: string) => void;
   initialSection?: LogSection;
   onSectionHandled?: () => void;
+  onNavigate: (view: View) => void;
 }
 
-export default function Log({ initialSection, onSectionHandled }: LogProps) {
-  const [showMigraineForm, setShowMigraineForm] = useState(false);
-  const [showPeriodDialog, setShowPeriodDialog] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(new Date());
+const timeOf = (ts: string) => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+export default function Log({ date, onDateChange, initialSection, onSectionHandled, onNavigate }: Props) {
   const { toast } = useToast();
-  
-  const waterRef = useRef<HTMLDivElement>(null);
-  const mealRef = useRef<HTMLDivElement>(null);
-  const supplementRef = useRef<HTMLDivElement>(null);
+  const [editing, setEditing] = useState<Attack | "new" | null>(null);
+  const [periodOpen, setPeriodOpen] = useState(false);
+  const [mealTime, setMealTime] = useState(nowLocalTime());
+  const refs = { water: useRef<HTMLDivElement>(null), meal: useRef<HTMLDivElement>(null), supplements: useRef<HTMLDivElement>(null) };
+  const q = `?date=${date}`;
 
   useEffect(() => {
-    if (initialSection) {
-      if (initialSection === 'migraine') {
-        setShowMigraineForm(true);
-      } else if (initialSection === 'water' && waterRef.current) {
-        waterRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      } else if (initialSection === 'meal' && mealRef.current) {
-        mealRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      } else if (initialSection === 'supplements' && supplementRef.current) {
-        supplementRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-      onSectionHandled?.();
-    }
-  }, [initialSection, onSectionHandled]);
-  const dateString = format(selectedDate, 'yyyy-MM-dd');
-  const isToday = format(new Date(), 'yyyy-MM-dd') === dateString;
+    if (!initialSection) return;
+    if (initialSection === "migraine") setEditing("new");
+    else refs[initialSection]?.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    onSectionHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSection]);
 
-  const { data: waterLog, isLoading: waterLoading } = useQuery<any[]>({
-    queryKey: [`/api/water?date=${dateString}`],
-  });
+  useEffect(() => setMealTime(date === todayLocal() ? nowLocalTime() : "12:30"), [date]);
 
-  const { data: mealLog } = useQuery<any[]>({
-    queryKey: ['/api/meals'],
-  });
+  const { data: water = [] } = useQuery<Water[]>({ queryKey: [`/api/water${q}`] });
+  const { data: meals = [] } = useQuery<Meal[]>({ queryKey: [`/api/meals${q}`] });
+  const { data: intake = [] } = useQuery<Intake[]>({ queryKey: [`/api/supplement-intake${q}`] });
+  const { data: periods = [] } = useQuery<Period[]>({ queryKey: ["/api/cycle"] });
+  const { data: attacks = [] } = useQuery<Attack[]>({ queryKey: ["/api/attacks"] });
+  const { data: medications = [] } = useQuery<Medication[]>({ queryKey: ["/api/medications"] });
+  const { data: supplements = [] } = useQuery<Supplement[]>({ queryKey: ["/api/supplements"] });
+  const { data: profile } = useQuery<ProfileRecord>({ queryKey: ["/api/profile"] });
 
-  const { data: supplementLog, isLoading: supplementLoading } = useQuery<any[]>({
-    queryKey: [`/api/supplements?date=${dateString}`],
-  });
-
-  const { data: cycleLog } = useQuery<any[]>({
-    queryKey: ['/api/cycle'],
-  });
-
-  const addWaterMutation = useMutation({
-    mutationFn: (amount: number) => apiRequest('/api/water', 'POST', { amount, date: dateString }),
+  const write = (title: string) => ({
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/water?date=${dateString}`] });
-      toast({ title: "Water logged successfully" });
+      invalidateAll();
+      toast({ title });
     },
-    onError: (error: any) => {
-      toast({ title: "Failed to log water", variant: "destructive" });
-    }
+    onError: (e: Error) => toast({ title: "Something went wrong", description: e.message, variant: "destructive" }),
   });
 
-  const addMealMutation = useMutation({
-    mutationFn: (type: string) => apiRequest('/api/meals', 'POST', { type }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/meals'] });
-      toast({ title: "Meal logged successfully" });
-    }
+  const addWater = useMutation({ mutationFn: (amount: number) => apiJson("/api/water", "POST", { amount, localDate: date }), ...write("Water logged") });
+  const addMeal = useMutation({ mutationFn: (type: string) => apiJson("/api/meals", "POST", { type, localDate: date, localTime: mealTime }), ...write("Meal logged") });
+  const addIntake = useMutation({
+    mutationFn: (s: Supplement) => apiJson("/api/supplement-intake", "POST", { name: s.name, dosage: s.dailyMg ? `${s.dailyMg} mg` : "", localDate: date }),
+    ...write("Supplement logged"),
   });
-
-  const addSupplementMutation = useMutation({
-    mutationFn: (data: { name: string; dosage: string }) => 
-      apiRequest('/api/supplements', 'POST', { ...data, date: dateString }),
+  const remove = useMutation({ mutationFn: (url: string) => apiJson(url, "DELETE"), ...write("Removed") });
+  const addPeriods = useMutation({
+    mutationFn: (entries: { startDate: string; endDate?: string }[]) => apiJson("/api/cycle/import", "POST", { entries }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/supplements?date=${dateString}`] });
-      toast({ title: "Supplement logged successfully" });
-    }
-  });
-
-  const addMigraineMutation = useMutation({
-    mutationFn: (data: any) => apiRequest('/api/migraines', 'POST', data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/migraines'] });
-      toast({ title: "Migraine logged successfully", description: "Your migraine has been recorded for analysis." });
-      setShowMigraineForm(false);
+      setPeriodOpen(false);
+      invalidateAll();
+      toast({ title: "Periods saved" });
     },
-    onError: (error: any) => {
-      toast({ 
-        title: "Failed to log migraine", 
-        description: error.message || "Please try again",
-        variant: "destructive" 
-      });
-    }
+    onError: (e: Error) => toast({ title: "Couldn't save periods", description: e.message, variant: "destructive" }),
   });
-
-  const addCycleMutation = useMutation({
-    mutationFn: (data: { startDate: string; endDate?: string }) => {
-      return apiRequest('/api/cycle', 'POST', data);
-    },
+  const saveAttack = useMutation({
+    mutationFn: (data: AttackInput) => (editing && editing !== "new" ? apiJson(`/api/attacks/${editing.id}`, "PUT", data) : apiJson("/api/attacks", "POST", data)),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/cycle'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/cycle/current'] });
-      setShowPeriodDialog(false);
-      toast({ title: "Period logged successfully" });
+      setEditing(null);
+      invalidateAll();
+      toast({ title: "Attack saved", description: "Thanks — this feeds your forecast and your doctor's report." });
     },
-    onError: (error: any) => {
-      toast({ 
-        title: "Failed to log period", 
-        description: error.message || "Please try again",
-        variant: "destructive" 
-      });
-    }
+    onError: (e: Error) => toast({ title: "Couldn't save attack", description: e.message, variant: "destructive" }),
   });
 
-  const waterEntries = waterLog?.map((entry: any) => ({
-    time: new Date(entry.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-    value: `${entry.amount}ml`
-  })) ?? [];
-
-  const mealEntries = mealLog?.map((entry: any) => ({
-    time: new Date(entry.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-    value: entry.type
-  })) ?? [];
-
-  const supplementEntries = supplementLog?.map((entry: any) => ({
-    time: new Date(entry.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-    value: `${entry.name} (${entry.dosage})`
-  })) ?? [];
-
-  const periodEntries = cycleLog?.map((entry: any) => ({
-    time: new Date(entry.startDate).toLocaleDateString(),
-    value: entry.endDate ? `Period ended ${new Date(entry.endDate).toLocaleDateString()}` : 'Period started'
-  })) ?? [];
-
-  const handleAddWater = (amount: string) => {
-    addWaterMutation.mutate(parseInt(amount));
-  };
-
-  const handleAddMeal = (type: string) => {
-    addMealMutation.mutate(type);
-  };
-
-  const handleAddSupplement = (supplement: string) => {
-    const supplementMap: Record<string, { name: string; dosage: string }> = {
-      'CoQ10 (300mg)': { name: 'CoQ10', dosage: '300mg' },
-      'Magnesium Citrate (400mg)': { name: 'Magnesium Citrate', dosage: '400mg' },
-      'Vitamin B2 (400mg)': { name: 'Vitamin B2', dosage: '400mg' },
-      'Selenium (200mcg)': { name: 'Selenium', dosage: '200mcg' }
-    };
-    const data = supplementMap[supplement];
-    if (data) {
-      addSupplementMutation.mutate(data);
-    }
-  };
-
-  const handleLogMigraine = (data: any) => {
-    addMigraineMutation.mutate(data);
-  };
-
-  const handleAddPeriod = () => {
-    setShowPeriodDialog(true);
-  };
-
-  const handleLogPeriodManual = (startDate: string, endDate?: string) => {
-    addCycleMutation.mutate({ startDate, endDate });
-  };
-
-  const handleImportFromDevice = async (entries: ParsedPeriodEntry[]) => {
-    let successCount = 0;
-    for (const entry of entries) {
-      try {
-        await apiRequest('/api/cycle', 'POST', entry);
-        successCount++;
-      } catch {
-        // Continue with other entries
-      }
-    }
-    queryClient.invalidateQueries({ queryKey: ['/api/cycle'] });
-    queryClient.invalidateQueries({ queryKey: ['/api/cycle/current'] });
-    setShowPeriodDialog(false);
-    toast({ 
-      title: "Import Complete", 
-      description: `Successfully imported ${successCount} of ${entries.length} period entries.` 
-    });
-  };
-
-  if (showMigraineForm) {
+  if (editing) {
+    const { id: _id, ...initial } = editing === "new" ? ({} as Attack) : editing;
     return (
-      <div className="max-w-2xl mx-auto">
-        <MigraineLogForm
-          onSubmit={handleLogMigraine}
-          onCancel={() => setShowMigraineForm(false)}
+      <div className="max-w-3xl mx-auto">
+        <AttackForm
+          medications={medications}
+          customTriggers={profile?.patterns.customTriggers}
+          initial={editing === "new" ? undefined : (initial as AttackInput)}
+          onSubmit={(d) => saveAttack.mutate(d)}
+          onCancel={() => setEditing(null)}
+          onManageMedications={() => onNavigate("medications")}
+          isSaving={saveAttack.isPending}
         />
       </div>
     );
   }
 
-  const handlePreviousDay = () => {
-    setSelectedDate(prev => subDays(prev, 1));
-  };
-
-  const handleNextDay = () => {
-    setSelectedDate(prev => addDays(prev, 1));
-  };
-
-  const handleToday = () => {
-    setSelectedDate(new Date());
-  };
+  const medName = new Map(medications.map((m) => [m.id, m.name]));
+  const needsRating = attacks.filter((a) => a.doses.some((d) => !d.reliefAt2h)).slice(0, 3);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-center gap-4 mb-6">
-        <Button 
-          size="icon" 
-          variant="outline" 
-          onClick={handlePreviousDay}
-          data-testid="button-log-prev-day"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </Button>
-        <div className="flex items-center gap-2">
-          <input
-            type="date"
-            value={dateString}
-            onChange={(e) => setSelectedDate(new Date(e.target.value + 'T12:00:00'))}
-            className="px-3 py-2 border rounded-md bg-background"
-            data-testid="input-log-date"
-          />
-          {!isToday && (
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={handleToday}
-              data-testid="button-log-today"
-            >
-              Today
-            </Button>
-          )}
-        </div>
-        <Button 
-          size="icon" 
-          variant="outline" 
-          onClick={handleNextDay}
-          data-testid="button-log-next-day"
-        >
-          <ChevronRight className="w-4 h-4" />
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-3xl font-bold">Log</h1>
+        <DateNav date={date} onChange={onDateChange} />
+      </div>
+
+      <div className="flex justify-center">
+        <Button size="lg" variant="destructive" onClick={() => setEditing("new")} data-testid="button-log-migraine-episode">
+          Log a migraine attack
         </Button>
       </div>
 
+      {needsRating.length > 0 && (
+        <Card className="p-5 border-primary/40 bg-primary/5">
+          <h2 className="font-semibold mb-2">How did your medicine work?</h2>
+          <p className="text-sm text-muted-foreground mb-3">Rating relief 2 hours after a dose shows whether your treatment is working.</p>
+          <div className="space-y-2">
+            {needsRating.map((a) => (
+              <div key={a.id} className="flex items-center justify-between text-sm">
+                <span>{formatLocalDateTime(a.start)}</span>
+                <Button size="sm" variant="outline" onClick={() => setEditing(a)}>
+                  Rate relief
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div ref={waterRef}>
+        <div ref={refs.water}>
           <LoggingPanel
-            title="Water Log"
+            title="Water"
             icon={<Droplets className="w-5 h-5 text-chart-2" />}
-            entries={waterEntries}
+            entries={water.map((w) => ({ id: w.id, time: timeOf(w.timestamp), value: `${w.amount} ml` }))}
             quickAddOptions={[
-              { label: '250ml', value: '250' },
-              { label: '500ml', value: '500' },
-              { label: '750ml', value: '750' }
+              { label: "250 ml", value: "250" },
+              { label: "500 ml", value: "500" },
+              { label: "750 ml", value: "750" },
             ]}
-            onAdd={handleAddWater}
+            onAdd={(v) => addWater.mutate(Number(v))}
+            onRemove={(id) => remove.mutate(`/api/water/${id}`)}
           />
         </div>
 
-        <div ref={mealRef}>
+        <div ref={refs.meal}>
           <LoggingPanel
-            title="Meal Log"
+            title="Meals"
             icon={<Utensils className="w-5 h-5 text-chart-3" />}
-            entries={mealEntries}
-            quickAddOptions={[
-              { label: 'Breakfast', value: 'Breakfast' },
-              { label: 'Lunch', value: 'Lunch' },
-              { label: 'Dinner', value: 'Dinner' },
-              { label: 'Snack', value: 'Snack' }
-            ]}
-            onAdd={handleAddMeal}
-          />
+            entries={meals.map((m) => ({ id: m.id, time: m.localTime ?? timeOf(m.timestamp), value: m.type }))}
+            quickAddOptions={["Breakfast", "Lunch", "Dinner", "Snack"].map((t) => ({ label: t, value: t }))}
+            onAdd={(t) => addMeal.mutate(t)}
+            onRemove={(id) => remove.mutate(`/api/meals/${id}`)}
+          >
+            <label className="flex items-center gap-2 text-sm text-muted-foreground mb-3">
+              Eaten at
+              <Input type="time" className="w-28" value={mealTime} onChange={(e) => setMealTime(e.target.value)} aria-label="Meal time" />
+            </label>
+          </LoggingPanel>
         </div>
 
-        <div ref={supplementRef}>
+        <div ref={refs.supplements}>
           <LoggingPanel
-            title="Supplement Log"
+            title="Supplements"
             icon={<Activity className="w-5 h-5 text-primary" />}
-            entries={supplementEntries}
-            quickAddOptions={[
-              { label: 'CoQ10', value: 'CoQ10 (300mg)' },
-              { label: 'Magnesium', value: 'Magnesium Citrate (400mg)' },
-              { label: 'Vitamin B2', value: 'Vitamin B2 (400mg)' },
-              { label: 'Selenium', value: 'Selenium (200mcg)' }
-            ]}
-            onAdd={handleAddSupplement}
+            entries={intake.map((i) => ({ id: i.id, time: timeOf(i.timestamp), value: `${i.name}${i.dosage ? ` (${i.dosage})` : ""}` }))}
+            quickAddOptions={supplements.filter((s) => s.active).map((s) => ({ label: s.name, value: s.id }))}
+            onAdd={(id) => {
+              const s = supplements.find((x) => x.id === id);
+              if (s) addIntake.mutate(s);
+            }}
+            onRemove={(id) => remove.mutate(`/api/supplement-intake/${id}`)}
+            emptyMessage={supplements.length ? "None logged for this day" : "Add your supplements on the Medications page"}
           />
         </div>
 
         <LoggingPanel
-          title="Period Log"
+          title="Periods"
           icon={<Calendar className="w-5 h-5 text-pink-500" />}
-          entries={periodEntries}
-          onAdd={handleAddPeriod}
+          entries={[...periods]
+            .reverse()
+            .slice(0, 6)
+            .map((p) => ({
+              id: p.id,
+              time: parseLocalDate(p.startDate).toLocaleDateString(),
+              value: p.endDate ? `to ${parseLocalDate(p.endDate).toLocaleDateString()}` : "Started",
+            }))}
+          quickAddOptions={[{ label: "Log or import", value: "open" }]}
+          onAdd={() => setPeriodOpen(true)}
+          onRemove={(id) => remove.mutate(`/api/cycle/${id}`)}
         />
       </div>
 
-      <div className="flex justify-center pt-6">
-        <button
-          onClick={() => setShowMigraineForm(true)}
-          className="px-6 py-3 bg-destructive text-destructive-foreground rounded-lg font-semibold hover-elevate active-elevate-2"
-          data-testid="button-log-migraine-episode"
-        >
-          Log Migraine Episode
-        </button>
-      </div>
+      <Card className="p-6" data-testid="card-attack-history">
+        <h2 className="text-lg font-semibold mb-4">Recent attacks</h2>
+        {attacks.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No attacks logged yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {attacks.slice(0, 15).map((a) => (
+              <button key={a.id} onClick={() => setEditing(a)} className="w-full text-left flex items-center justify-between p-3 bg-muted rounded-md hover-elevate" data-testid={`attack-${a.id}`}>
+                <div>
+                  <div className="font-medium">{formatLocalDateTime(a.start)}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {a.doses.length ? a.doses.map((d) => `${medName.get(d.medicationId) ?? "medicine"}${d.reliefAt2h ? ` → ${d.reliefAt2h}` : ""}`).join(", ") : "No medicine logged"}
+                  </div>
+                </div>
+                <span className="text-lg font-bold text-destructive">{a.peakSeverity}/10</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </Card>
 
       <PeriodLogDialog
-        open={showPeriodDialog}
-        onOpenChange={setShowPeriodDialog}
-        onLogManual={handleLogPeriodManual}
-        onImportFromDevice={handleImportFromDevice}
-        isLoading={addCycleMutation.isPending}
+        open={periodOpen}
+        onOpenChange={setPeriodOpen}
+        onLogManual={(startDate, endDate) => addPeriods.mutate([{ startDate, endDate }])}
+        onImportFromDevice={(entries) => addPeriods.mutate(entries)}
+        isLoading={addPeriods.isPending}
       />
     </div>
   );

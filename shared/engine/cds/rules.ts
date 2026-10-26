@@ -1,4 +1,4 @@
-import { RED_FLAGS, SUPPLEMENT_CATALOG, TRIGGERS, labelOf } from '../domain/catalog';
+import { RED_FLAGS, SUPPLEMENT_CATALOG, labelOf } from '../domain/catalog';
 import { addDays, daysBetween, hoursBetween, toISODate } from '../domain/dates';
 import type { AppState, Attack, ISODate, Medication, MedicationClass, Recommendation } from '../domain/types';
 import {
@@ -13,6 +13,7 @@ import {
   windowEnding,
 } from './metrics';
 import { THRESHOLDS, analyzeTriggers, compareMetrics, menstrualPattern } from './patterns';
+import { triggerLabel } from './riskModel';
 
 export interface RuleContext {
   state: AppState;
@@ -36,15 +37,18 @@ export const redFlagRule: Rule = (ctx) => {
   const out: Recommendation[] = [];
   const recent = recentAttacks(ctx, 14);
   const urgentIds = new Set(RED_FLAGS.filter((f) => f.urgent).map((f) => f.id));
-  const urgent = recent.flatMap((a) => a.redFlags.filter((f) => urgentIds.has(f)));
-  const other = recent.flatMap((a) => a.redFlags.filter((f) => !urgentIds.has(f)));
+  const veryRecent = recentAttacks(ctx, 2);
+  const urgent = veryRecent.flatMap((a) => a.redFlags.filter((f) => urgentIds.has(f)));
+  // Older urgent flags no longer need an emergency prompt; just make sure they were looked at.
+  const earlierUrgent = recent.filter((a) => !veryRecent.includes(a)).flatMap((a) => a.redFlags.filter((f) => urgentIds.has(f)));
+  const other = [...recent.flatMap((a) => a.redFlags.filter((f) => !urgentIds.has(f))), ...earlierUrgent];
   if (urgent.length) {
     out.push({
       id: 'red-flag-urgent',
       severity: 'urgent',
       category: 'safety',
       title: 'Warning signs that need urgent medical assessment',
-      detail: `A recent headache had: ${[...new Set(urgent)].map((f) => labelOf(RED_FLAGS, f)).join('; ')}. These can point to a cause other than migraine. Seek emergency care now (call your local emergency number) if they are happening now or have not yet been checked.`,
+      detail: `A headache in the last 2 days had: ${[...new Set(urgent)].map((f) => labelOf(RED_FLAGS, f)).join('; ')}. These can point to a cause other than migraine. Seek emergency care now (call your local emergency number) if they are happening now or have not yet been checked.`,
       sources: ['snnoop10'],
     });
   }
@@ -54,7 +58,7 @@ export const redFlagRule: Rule = (ctx) => {
       severity: 'warning',
       category: 'safety',
       title: 'Headache features to review with your clinician soon',
-      detail: `Reported: ${[...new Set(other)].map((f) => labelOf(RED_FLAGS, f)).join('; ')}. These are not emergencies by themselves, but they should be assessed before assuming the headache is migraine.`,
+      detail: `Reported in the last 2 weeks: ${[...new Set(other)].map((f) => labelOf(RED_FLAGS, f)).join('; ')}. If you haven't already been checked for these, please let your doctor know soon so they can confirm it was migraine.`,
       sources: ['snnoop10'],
     });
   }
@@ -192,7 +196,7 @@ export const medicationOveruseRule: Rule = (ctx) => {
         category: 'medication-overuse',
         title: 'Getting close to the medication-overuse limit',
         detail: `In the last 30 days you used acute medicines on ${plural(now.totalDays, 'day')}${
-          close.length ? ` (${close.map((c) => `${c.cls}: ${c.days}/${c.threshold - 1} allowed`).join(', ')})` : ''
+          close.length ? ` (${close.map((c) => `${c.cls} on ${c.days} of ${c.threshold - 1} allowed days`).join(', ')})` : ''
         }. Plan how to manage the rest of the month with your clinician. Gepants are not thought to cause overuse headache.`,
         sources,
       },
@@ -339,7 +343,9 @@ export const acuteTreatmentRule: Rule = (ctx) => {
         severity: 'warning',
         category: 'acute-treatment',
         title: `${r.medication.name} is often not working`,
-        detail: `Pain-free at 2 hours in ${r.painFree}/${r.rated} attacks, partly better in ${r.partial}/${r.rated}. Ask your clinician about the dose, taking it earlier, a different form (nasal, injection), combining it with an NSAID, or switching.`,
+        detail: `Pain-free at 2 hours in ${r.painFree}/${r.rated} attacks, partly better in ${r.partial}/${r.rated}. Ask your clinician about the dose, taking it earlier, a different form (nasal, injection), ${
+          r.medication.cls === 'triptan' ? 'combining it with an NSAID, ' : r.medication.cls === 'nsaid' ? 'combining it with a triptan, ' : ''
+        }or switching.`,
         sources: ['ahs-2021-consensus'],
       });
     } else if (r.painFree / r.rated >= 0.6) {
@@ -769,7 +775,7 @@ export const patternRule: Rule = (ctx) => {
       category: 'pattern',
       title: 'Triggers your data supports',
       detail: strong
-        .map((t) => `${labelOf(TRIGGERS, t.trigger)}: attacks ${t.relativeRisk.toFixed(1)}× as likely on the day or next day (${t.exposedWithAttack}/${t.exposedDays} exposed days vs ${t.unexposedWithAttack}/${t.unexposedDays} other days)`)
+        .map((t) => `${triggerLabel(ctx.state, t.trigger)}: attacks ${t.relativeRisk.toFixed(1)}× as likely on the day or next day (${t.exposedWithAttack}/${t.exposedDays} exposed days vs ${t.unexposedWithAttack}/${t.unexposedDays} other days)`)
         .join('; ') + '. Managing the ones you can control may lower attack frequency.',
       sources: ['amf-library', 'nice-cg150'],
     });
@@ -780,7 +786,7 @@ export const patternRule: Rule = (ctx) => {
       severity: 'info',
       category: 'pattern',
       title: 'Possible triggers (not enough data yet)',
-      detail: `${suggestive.map((t) => `${labelOf(TRIGGERS, t.trigger)} (${t.relativeRisk.toFixed(1)}×)`).join(', ')}. Keep doing daily check-ins to confirm or rule these out.`,
+      detail: `${suggestive.map((t) => `${triggerLabel(ctx.state, t.trigger)} (${t.relativeRisk.toFixed(1)}×)`).join(', ')}. Keep doing daily check-ins to confirm or rule these out.`,
       sources: ['amf-library'],
     });
   }
@@ -796,7 +802,7 @@ export const patternRule: Rule = (ctx) => {
       severity: 'info',
       category: 'pattern',
       title: 'Suspected triggers your data does not support',
-      detail: `${notSupported.map((id) => labelOf(TRIGGERS, id)).join(', ')}: in your logs, attacks were no more likely after these exposures. Avoiding a trigger that isn't one can reduce quality of life without helping.`,
+      detail: `${notSupported.map((id) => triggerLabel(ctx.state, id)).join(', ')}: in your logs, attacks were no more likely after these exposures. Avoiding a trigger that isn't one can reduce quality of life without helping.`,
       sources: ['amf-library'],
     });
   }

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 
 interface LogEntry {
+  id?: string;
   time: string;
   value: string;
 }
@@ -14,7 +15,9 @@ interface LoggingPanelProps {
   entries: LogEntry[];
   quickAddOptions?: { label: string; value: string }[];
   onAdd: (value: string) => void;
+  onRemove?: (id: string) => void;
   emptyMessage?: string;
+  children?: React.ReactNode;
 }
 
 export default function LoggingPanel({ 
@@ -23,7 +26,9 @@ export default function LoggingPanel({
   entries, 
   quickAddOptions, 
   onAdd,
-  emptyMessage = 'No entries yet'
+  onRemove,
+  emptyMessage = 'No entries yet',
+  children,
 }: LoggingPanelProps) {
   return (
     <Card className="p-6" data-testid={`card-log-${title.toLowerCase().replace(/\s+/g, '-')}`}>
@@ -52,6 +57,8 @@ export default function LoggingPanel({
         </div>
       )}
 
+      {children}
+
       <div className="space-y-2">
         {entries.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-4">{emptyMessage}</p>
@@ -63,7 +70,14 @@ export default function LoggingPanel({
               data-testid={`log-entry-${idx}`}
             >
               <span className="text-sm text-muted-foreground">{entry.time}</span>
-              <span className="text-sm font-medium text-foreground">{entry.value}</span>
+              <span className="flex items-center gap-2">
+                <span className="text-sm font-medium text-foreground">{entry.value}</span>
+                {onRemove && entry.id && (
+                  <button className="text-xs text-muted-foreground underline" onClick={() => onRemove(entry.id!)} aria-label={`Remove ${entry.value}`}>
+                    remove
+                  </button>
+                )}
+              </span>
             </div>
           ))
         )}

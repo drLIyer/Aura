@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
 import type {
   AttackInput,
   DailyLogInput,
@@ -575,7 +575,8 @@ export class DbStorage implements IStorage {
         .values(chunk)
         .onConflictDoUpdate({
           target: [schema.wearableSamples.userId, schema.wearableSamples.date, schema.wearableSamples.metric, schema.wearableSamples.source],
-          set: { value: schema.wearableSamples.value },
+          // `excluded` is the row being inserted: a re-sync replaces the stored value.
+          set: { value: sql`excluded.value` },
         });
     }
     return samples.length;

@@ -1,87 +1,20 @@
-# ML Pipeline - Known Limitations & Setup Requirements
+# ML pipeline — status and limitations
 
-## Critical Timestamp Alignment Issue
+## What changed
 
-**Problem:** The current implementation has a temporal mismatch between data sources:
-- **Health Metrics**: Historical Fitbit data from April-May 2016 (940 days)
-- **Migraine/Lifestyle Logs**: Real-time data with current timestamps
+The first version exported features and labels that didn't line up. The "next 24 h" label covered the same calendar day as the features, and old 2016 Fitbit rows were paired with current migraine logs, so every label came out 0.
 
-**Impact:** The ML export will generate labels with all zeros (no migraines) when trained on historical health data, because:
-```typescript
-// This comparison will fail when metricDate is from 2016 but migraines are logged in 2025
-const hasMigraineNext24h = migraines.some(m => {
-  const mDate = new Date(m.timestamp);
-  return mDate >= metricDate && mDate < nextDay;
-});
-```
+The export (`server/mlExport.ts`) now works like this:
 
-## Solutions
+- **One user per export.** It covers only the signed-in user. It is never written to the server's disk.
+- **One row per check-in day D.** Features come from day D or earlier.
+- **The label is the next day.** `migraine_onset_next_day` is 1 when an attack *starts* on day D+1. Rows whose label day hasn't finished are left out.
+- **Cycle features use the person's own cycle.** `cycle_day` and `cycle_length` come from the person's logged periods. Only periods logged by day D are used, so the label day can't leak in.
+- **Exposures come from the app's rules.** These are the same derived exposures the app's trigger analysis uses, such as late lunch, short sleep and low readiness.
 
-### Option 1: Real-Time Data Collection (Recommended for MVP)
-**Best for: New users starting to track migraines**
+## Remaining limitations
 
-1. User logs migraines, lifestyle data, and cycle information in real-time
-2. Health metrics come from current Fitbit sync (not historical CSV)
-3. After 30-90 days of data collection, ML training becomes viable
-4. Export generates properly aligned features and labels
-
-**Implementation Status:** ✅ Fully implemented
-
-### Option 2: Historical Data Backfill
-**Best for: Users with existing migraine diaries**
-
-1. Manually backfill migraine_log table with historical dates matching Fitbit data
-2. Add script to import migraine history from external sources (paper diary, other apps)
-3. Requires timestamp translation to align with health_metrics dates
-
-**Implementation Status:** ❌ Not implemented
-
-### Option 3: Separate Historical & Real-Time Pipelines
-**Best for: Research using existing datasets**
-
-1. Create dedicated historical dataset loader for Fitbit + migraine history
-2. Separate export endpoint: `/api/export/ml-data/historical`
-3. Real-time pipeline remains unchanged
-
-**Implementation Status:** ❌ Not implemented
-
-## Current Recommendation
-
-**For MVP launch, use Option 1:**
-- Document that ML predictions require 30-90 days of consistent tracking
-- Users begin logging migraines, lifestyle, and health data now
-- First predictions available after sufficient data accumulation
-- This matches real-world usage patterns for health tracking apps
-
-## Data Requirements for ML Training
-
-Minimum viable dataset:
-- **Duration**: 30 days (90 days recommended)
-- **Health Metrics**: Daily Fitbit sync
-- **Migraine Logs**: At least 3-5 migraine episodes
-- **Cycle Logs**: At least 1-2 complete menstrual cycles
-- **Lifestyle Logs**: Regular caffeine, alcohol, stress tracking
-
-## Testing the Export Pipeline
-
-To test the ML export with current limitations:
-
-```bash
-# Export will work but labels will be all zeros
-curl http://localhost:5000/api/export/ml-data > test_export.csv
-
-# Check row count
-wc -l ml/data/input_data.csv
-
-# Verify columns are present
-head -1 ml/data/input_data.csv
-```
-
-Expected result: CSV with ~940 rows (one per Fitbit health metric day) but `migraine_label_next_24h` column will be all zeros.
-
-## Future Enhancements
-
-1. **Timestamp normalization utility**: Helper function to align historical data
-2. **Data import wizard**: UI for importing migraine history with date pickers
-3. **Validation endpoint**: Check dataset quality before training
-4. **Auto-scheduling**: Trigger retraining after N days of new data
+- **Small numbers.** One person produces about 30 rows a month, with a handful of positive labels. A per-person model needs months of data. A population model needs many consenting users and a governance process, and neither exists yet.
+- **The forecast doesn't use this pipeline yet.** The in-app forecast is the Bayesian trigger model in `shared/engine/cds/riskModel.ts`, which is backtested in the app. Any ML model should be compared against that backtest before it replaces anything.
+- **No weather data.** Barometric pressure isn't collected yet.
+- **Within-person accuracy is modest.** Published trigger and wearable models reach AUC 0.56–0.65 (see `reports/`), so expect the same here.
