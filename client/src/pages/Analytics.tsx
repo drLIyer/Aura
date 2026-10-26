@@ -4,27 +4,33 @@ import CycleAnalyticsChart from "@/components/CycleAnalyticsChart";
 import { Card } from "@/components/ui/card";
 
 export default function Analytics() {
-  const { data: trendData } = useQuery<any[]>({
-    queryKey: ['/api/health/trends', 30],
-    queryFn: async () => {
-      const response = await fetch('/api/health/trends?days=30');
-      return response.json();
-    }
+  const { data: trendData, isError: trendDataError } = useQuery<any[]>({
+    queryKey: ['/api/health/trends?days=30'],
   });
 
-  const { data: migraineLog } = useQuery<any[]>({
+  const { data: migraineLog, isError: migraineLogError } = useQuery<any[]>({
     queryKey: ['/api/migraines'],
   });
 
-  const { data: cycleLog } = useQuery<any[]>({
+  const { data: cycleLog, isError: cycleLogError } = useQuery<any[]>({
     queryKey: ['/api/cycle'],
   });
 
-  const { data: cycleCorrelation } = useQuery<any[]>({
+  const { data: cycleCorrelation, isError: cycleCorrelationError } = useQuery<any[]>({
     queryKey: ['/api/analytics/cycle-correlation'],
   });
+  const trendRows = Array.isArray(trendData) ? trendData : [];
+  const migraineRows = Array.isArray(migraineLog) ? migraineLog : [];
+  const correlationRows = Array.isArray(cycleCorrelation) ? cycleCorrelation : [];
+  const hasUnexpectedPayload =
+    (trendData != null && !Array.isArray(trendData)) ||
+    (migraineLog != null && !Array.isArray(migraineLog)) ||
+    (cycleLog != null && !Array.isArray(cycleLog)) ||
+    (cycleCorrelation != null && !Array.isArray(cycleCorrelation));
+  const hasAnalyticsError =
+    trendDataError || migraineLogError || cycleLogError || cycleCorrelationError || hasUnexpectedPayload;
 
-  const trends = trendData?.map((d: any) => ({
+  const trends = trendRows.map((d: any) => ({
     date: d.date,
     readiness: d.readiness,
     sleep: d.sleep,
@@ -32,30 +38,35 @@ export default function Analytics() {
     migraine: 0
   })) ?? [];
 
-  const cycleData = cycleCorrelation ?? [
+  const cycleData = Array.isArray(cycleCorrelation) ? cycleCorrelation : [
     { phase: 'Menstruation', migraines: 0, total: 0, percentage: 0 },
     { phase: 'Follicular', migraines: 0, total: 0, percentage: 0 },
     { phase: 'Ovulation', migraines: 0, total: 0, percentage: 0 },
     { phase: 'Luteal', migraines: 0, total: 0, percentage: 0 }
   ];
 
-  const migraineHistory = migraineLog?.map((migraine: any) => ({
+  const migraineHistory = migraineRows.map((migraine: any) => ({
     date: new Date(migraine.timestamp).toLocaleDateString(),
     severity: migraine.severity,
     duration: migraine.duration,
     phase: 'Analysis in progress'
   })) ?? [];
 
-  const totalMigraines = migraineLog?.length ?? 0;
-  const avgSeverity = migraineLog && migraineLog.length > 0
-    ? (migraineLog.reduce((sum: number, m: any) => sum + m.severity, 0) / migraineLog.length).toFixed(1)
+  const totalMigraines = migraineRows.length;
+  const avgSeverity = migraineRows.length > 0
+    ? (migraineRows.reduce((sum: number, m: any) => sum + m.severity, 0) / migraineRows.length).toFixed(1)
     : 0;
   
-  const lutealMigraines = cycleCorrelation?.find(c => c.phase === 'Luteal')?.migraines ?? 0;
+  const lutealMigraines = correlationRows.find(c => c.phase === 'Luteal')?.migraines ?? 0;
   const pmsPercentage = totalMigraines > 0 ? Math.round((lutealMigraines / totalMigraines) * 100) : 0;
 
   return (
     <div className="space-y-6">
+      {hasAnalyticsError && (
+        <p role="alert" className="text-sm text-destructive">
+          Some analytics data couldn&apos;t be loaded right now. Please try again later.
+        </p>
+      )}
       {trends.length > 0 && <TrendsChart data={trends} days={30} />}
 
       {cycleData && <CycleAnalyticsChart data={cycleData} />}
