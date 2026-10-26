@@ -157,6 +157,41 @@ export default function Patterns() {
         </div>
       </Card>
 
+      <Card className="p-6 space-y-4" data-testid="card-thresholds">
+        <div>
+          <h2 className="text-lg font-semibold">Your own cut-offs</h2>
+          <p className="text-sm text-muted-foreground">
+            If you've noticed your attacks follow, say, a sleep score under 50, set it here. Leave blank to use your device's own bands (or 70).
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {(
+            [
+              ["sleepScoreBelow", "Low sleep score: below", 1, 100],
+              ["readinessBelow", "Low readiness / recovery: below", 1, 100],
+              ["stressAtLeast", "Stressful day: my stress rating at least (0–10)", 1, 10],
+              ["shortSleepHours", "Short sleep: under (hours)", 1, 12],
+            ] as const
+          ).map(([key, label, min, max]) => (
+            <div key={key}>
+              <Label htmlFor={`th-${key}`}>{label}</Label>
+              <Input
+                id={`th-${key}`}
+                type="number"
+                min={min}
+                max={max}
+                value={p.thresholds?.[key] ?? ""}
+                onChange={(e) => set("thresholds", { ...p.thresholds, [key]: e.target.value === "" ? undefined : Number(e.target.value) })}
+              />
+            </div>
+          ))}
+          <div>
+            <Label htmlFor="th-lunch">Late lunch: at or after</Label>
+            <Input id="th-lunch" type="time" value={p.thresholds?.lateLunchAfter ?? ""} onChange={(e) => set("thresholds", { ...p.thresholds, lateLunchAfter: e.target.value || undefined })} />
+          </div>
+        </div>
+      </Card>
+
       <Card className="p-6 space-y-5">
         <div>
           <h2 className="text-lg font-semibold mb-2">Early warning signs you notice</h2>

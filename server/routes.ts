@@ -19,7 +19,7 @@ import {
 } from "@shared/api";
 import { evaluate } from "@shared/engine/cds/engine";
 import { acuteMedicationDays, hasAura, latestMidas, midasGrade, midasScore, summarize, windowEnding } from "@shared/engine/cds/metrics";
-import { compareMetrics, cycleStatus, frequency, inPerimenstrualWindow, menstrualPattern } from "@shared/engine/cds/patterns";
+import { compareMetrics, cycleStatus, frequency, inPerimenstrualWindow, menstrualPattern, primarySource, scoreBands, suggestThreshold, thresholdsFor } from "@shared/engine/cds/patterns";
 import { backtest, fitRiskModel, forecast } from "@shared/engine/cds/riskModel";
 import { medicationResponses, overuseStatus } from "@shared/engine/cds/rules";
 import { addDays, dateRange } from "@shared/engine/domain/dates";
@@ -464,6 +464,14 @@ export function buildInsights(state: AppState, today: string) {
     cycleCorrelation: cycleCorrelation(state, today),
     backtest: backtest(state, today),
     loggedDays: model.loggedDays,
+    scores: (["sleepScore", "readinessScore"] as const).map((metric) => ({
+      metric,
+      source: primarySource(state, metric) ?? null,
+      bands: scoreBands(state, metric),
+      suggestion: suggestThreshold(state, metric),
+      currentThreshold: metric === "sleepScore" ? thresholdsFor(state).lowSleepScore : thresholdsFor(state).lowReadiness,
+      personal: metric === "sleepScore" ? state.patterns.thresholds?.sleepScoreBelow !== undefined : state.patterns.thresholds?.readinessBelow !== undefined,
+    })),
   };
 }
 

@@ -189,7 +189,22 @@ export interface SelfReportedPatterns {
   exacerbators: string[];
   /** Early warning signs (prodrome) the patient recognises. */
   warningSigns: string[];
+  /** The patient's own cut-offs, e.g. "my attacks follow nights with a sleep score under 50". */
+  thresholds?: PersonalThresholds;
   notes?: string;
+}
+
+export interface PersonalThresholds {
+  /** A sleep score below this counts as a low-sleep-score day (default 70). */
+  sleepScoreBelow?: number;
+  /** A readiness/recovery score below this counts as low readiness (default 70). */
+  readinessBelow?: number;
+  /** Self-rated stress (0–10) at or above this counts as a stressful day (default 7). */
+  stressAtLeast?: number;
+  /** Lunch at or after this time (HH:MM) counts as a late meal (default 15:00). */
+  lateLunchAfter?: string;
+  /** Sleep shorter than this many hours counts as poor sleep (default 6). */
+  shortSleepHours?: number;
 }
 
 export type WearableMetric =
@@ -201,6 +216,10 @@ export type WearableMetric =
   /** 0–100 vendor scores (Oura, Fitbit, Garmin, Whoop recovery). */
   | 'sleepScore'
   | 'readinessScore'
+  /** 0–100, higher = MORE stress (Garmin stress level, Samsung, Oura daytime stress). */
+  | 'stressLevel'
+  /** 0–100, higher = LESS stress (Fitbit Stress Management Score). Kept separate so it is never read backwards. */
+  | 'stressManagementScore'
   | 'steps'
   | 'spo2'
   | 'skinTempDeviation'

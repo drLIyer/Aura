@@ -1,6 +1,6 @@
 import { RED_FLAGS, SUPPLEMENT_CATALOG, labelOf } from '../domain/catalog';
 import { addDays, daysBetween, hoursBetween, toISODate } from '../domain/dates';
-import type { AppState, Attack, ISODate, Medication, MedicationClass, Recommendation } from '../domain/types';
+import type { AppState, Attack, ISODate, Medication, MedicationClass, Recommendation, WearableMetric } from '../domain/types';
 import {
   acuteMedicationDays,
   hasAura,
@@ -12,7 +12,7 @@ import {
   moderateSevereDays,
   windowEnding,
 } from './metrics';
-import { THRESHOLDS, analyzeTriggers, compareMetrics, menstrualPattern } from './patterns';
+import { analyzeTriggers, compareMetrics, menstrualPattern, primarySource, suggestThreshold, thresholdsFor } from './patterns';
 import { triggerLabel } from './riskModel';
 
 export interface RuleContext {
@@ -819,6 +819,24 @@ export const patternRule: Rule = (ctx) => {
     });
   }
 
+  for (const [metric, name, key] of [
+    ['sleepScore', 'sleep score', 'sleepScoreBelow'],
+    ['readinessScore', 'readiness score', 'readinessBelow'],
+  ] as const) {
+    const suggestion = suggestThreshold(ctx.state, metric);
+    const current = ctx.state.patterns.thresholds?.[key];
+    if (suggestion && current !== suggestion.below) {
+      out.push({
+        id: `threshold-${metric}`,
+        severity: 'info',
+        category: 'pattern',
+        title: `Your attacks follow a ${name} under ${suggestion.below}`,
+        detail: `On the ${suggestion.exposedDays} days your ${name} was under ${suggestion.below}, an attack was ${suggestion.relativeRisk.toFixed(1)}× as likely to start that day or the next. You can set ${suggestion.below} as your own threshold in My patterns so your forecast uses it.`,
+        sources: ['amf-library'],
+      });
+    }
+  }
+
   const meals = triggers.find((t) => t.trigger === 'late-meal' || t.trigger === 'skipped-meal');
   if (meals && meals.relativeRisk >= 1.5) {
     out.push({
@@ -826,7 +844,7 @@ export const patternRule: Rule = (ctx) => {
       severity: 'info',
       category: 'pattern',
       title: 'Meal timing matters for you',
-      detail: `Late or skipped meals precede more of your attacks. Practical steps include a fixed lunch time, a reminder before ${THRESHOLDS.lateLunch}, and keeping a snack with protein on hand for long days.`,
+      detail: `Late or skipped meals precede more of your attacks. Practical steps include a fixed lunch time, a reminder before ${thresholdsFor(ctx.state).lateLunch}, and keeping a snack with protein on hand for long days.`,
       sources: ['amf-library'],
     });
   }
@@ -838,13 +856,18 @@ export const patternRule: Rule = (ctx) => {
 
 export const wearableRule: Rule = (ctx) => {
   const out: Recommendation[] = [];
-  const latest = (metric: string) => {
-    const samples = ctx.state.wearableSamples.filter((s) => s.metric === metric && s.date >= addDays(ctx.today, -1));
+  // Each metric is read from its main device only; vendors' scales differ.
+  const fromMain = (metric: WearableMetric) => {
+    const source = primarySource(ctx.state, metric);
+    return ctx.state.wearableSamples.filter((s) => s.metric === metric && s.source === source);
+  };
+  const latest = (metric: WearableMetric) => {
+    const samples = fromMain(metric).filter((s) => s.date >= addDays(ctx.today, -1));
     return samples.length ? samples[samples.length - 1].value : undefined;
   };
-  const baseline = (metric: string) => {
-    const vals = ctx.state.wearableSamples
-      .filter((s) => s.metric === metric && s.date < addDays(ctx.today, -1) && s.date >= addDays(ctx.today, -31))
+  const baseline = (metric: WearableMetric) => {
+    const vals = fromMain(metric)
+      .filter((s) => s.date < addDays(ctx.today, -1) && s.date >= addDays(ctx.today, -31))
       .map((s) => s.value);
     if (vals.length < 7) return undefined;
     const m = vals.reduce((a, b) => a + b, 0) / vals.length;
@@ -859,6 +882,8 @@ export const wearableRule: Rule = (ctx) => {
     ['restingHeartRate', 'resting heart rate', 1],
     ['sleepScore', 'sleep score', -1],
     ['readinessScore', 'readiness score', -1],
+    ['stressLevel', 'stress level', 1],
+    ['stressManagementScore', 'stress management score', -1],
   ] as const) {
     const v = latest(metric);
     const b = baseline(metric);
@@ -866,7 +891,12 @@ export const wearableRule: Rule = (ctx) => {
     if ((v - b.m) / b.sd * dir >= 1) signals.push(`${label} ${Math.round(v)} vs your usual ${Math.round(b.m)}`);
   }
   const sleep = latest('sleepMinutes');
-  if (sleep !== undefined && sleep < THRESHOLDS.shortSleepHours * 60) signals.push(`only ${(sleep / 60).toFixed(1)} h sleep`);
+  const own = thresholdsFor(ctx.state);
+  const sleepScore = latest('sleepScore');
+  if (sleepScore !== undefined && sleepScore < own.lowSleepScore && ctx.state.patterns.thresholds?.sleepScoreBelow !== undefined) {
+    signals.push(`sleep score ${Math.round(sleepScore)}, below your own threshold of ${own.lowSleepScore}`);
+  }
+  if (sleep !== undefined && sleep < own.shortSleepHours * 60) signals.push(`only ${(sleep / 60).toFixed(1)} h sleep`);
 
   if (signals.length) {
     const personal = compareMetrics(ctx.state).filter((c) => Math.abs(c.effectSize) >= 0.5).map((c) => c.label);

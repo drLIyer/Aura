@@ -81,10 +81,16 @@ export default function CheckInDialog({ open, onOpenChange, date, initial, extra
               </span>
             </div>
             <Slider className="mt-3" min={0} max={10} step={1} value={[f.stress ?? 0]} onValueChange={([v]) => set("stress", v)} aria-label="Stress, 0 none to 10 extreme" />
+            {f.stress !== undefined && (
+              <button type="button" className="text-xs underline text-muted-foreground" onClick={() => set("stress", undefined)}>
+                clear
+              </button>
+            )}
             <div className="flex justify-between text-xs text-muted-foreground mt-1">
               <span>0 · calm</span>
               <span>10 · extreme stress</span>
             </div>
+            <p className="text-xs text-muted-foreground mt-1">Leave unset if your wearable tracks stress — its reading is used instead, read the right way round for your device.</p>
           </div>
 
           <div>

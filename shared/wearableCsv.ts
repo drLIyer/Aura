@@ -3,7 +3,9 @@
  * (Oura: "Average Resting Heart Rate", Whoop: "Resting heart rate (bpm)", Fitbit: "Resting Heart Rate"),
  * so columns are matched by keywords, and units are read from the header or inferred.
  */
-export type CsvMetric = "restingHeartRate" | "hrvRmssd" | "hrvSdnn" | "sleepMinutes" | "sleepScore" | "readinessScore" | "steps" | "spo2" | "skinTempDeviation";
+export type CsvMetric =
+  | "restingHeartRate" | "hrvRmssd" | "hrvSdnn" | "sleepMinutes" | "sleepScore" | "readinessScore"
+  | "stressLevel" | "stressManagementScore" | "steps" | "spo2" | "skinTempDeviation";
 
 export interface CsvSample {
   date: string;
@@ -45,6 +47,9 @@ export function metricForHeader(header: string): CsvMetric | null {
   if (/resting/.test(h) && /(heart|hr\b|pulse)/.test(h)) return "restingHeartRate";
   if (/(sdnn)/.test(h)) return "hrvSdnn";
   if (/(hrv|heart rate variability|rmssd)/.test(h)) return "hrvRmssd";
+  // Fitbit's Stress Management Score runs the other way (higher = calmer), so it gets its own metric.
+  if (/stress management|stress score|responsiveness/.test(h)) return "stressManagementScore";
+  if (/stress/.test(h)) return "stressLevel";
   if (/readiness|recovery score|body battery/.test(h)) return "readinessScore";
   if (/sleep score/.test(h)) return "sleepScore";
   if (/sleep/.test(h) && /(duration|asleep|total|minutes|hours|time)/.test(h) && !/(awake|latency|in bed|deep|rem|light|efficiency|onset)/.test(h)) return "sleepMinutes";

@@ -1,5 +1,6 @@
 import { addDays, daysBetween, toISODate } from '../domain/dates';
 import type { AppState, DailyLog, ISODate, WearableMetric } from '../domain/types';
+import { deviceMetric } from '../domain/deviceScoring';
 
 /**
  * Personal pattern analysis. The unit of analysis is a check-in day: an exposure on day D
@@ -21,7 +22,10 @@ function attackFollows(day: ISODate, onsets: Set<ISODate>): boolean {
   return false;
 }
 
-/** Thresholds that turn numbers into exposures. Scores follow vendor bands, where under 70 means "pay attention". */
+/**
+ * Default thresholds that turn numbers into exposures. Device scores follow vendor bands, where
+ * under 70 means "pay attention". Each person can override these with their own (PersonalThresholds).
+ */
 export const THRESHOLDS = {
   shortSleepHours: 6,
   poorSleepQuality: 2,
@@ -29,7 +33,45 @@ export const THRESHOLDS = {
   lateLunch: '15:00',
   longWorkHours: 10,
   lowScore: 70,
+  /** Garmin-style stress level (higher = more stress): 76+ is Garmin's "high" band. */
+  highStressLevel: 76,
+  /** Fitbit Stress Management Score (higher = less stress): under 60 means "many signs of stress". */
+  lowStressManagement: 60,
 };
+
+export interface ResolvedThresholds {
+  shortSleepHours: number;
+  highStress: number;
+  lateLunch: string;
+  lowSleepScore: number;
+  lowReadiness: number;
+}
+
+/**
+ * The person's own cut-offs win; otherwise the cut-off of the device that produces the score
+ * (e.g. Apple sleep score < 61, WHOOP recovery < 34); otherwise 70.
+ */
+export function thresholdsFor(state: Pick<AppState, 'patterns'> & Partial<Pick<AppState, 'wearableSamples'>>): ResolvedThresholds {
+  const t = state.patterns.thresholds ?? {};
+  const deviceDefault = (metric: WearableMetric) =>
+    state.wearableSamples ? deviceMetric(primarySource(state as Pick<AppState, 'wearableSamples'>, metric), metric)?.lowBelow : undefined;
+  return {
+    shortSleepHours: t.shortSleepHours ?? THRESHOLDS.shortSleepHours,
+    highStress: t.stressAtLeast ?? THRESHOLDS.highStress,
+    lateLunch: t.lateLunchAfter ?? THRESHOLDS.lateLunch,
+    lowSleepScore: t.sleepScoreBelow ?? deviceDefault('sleepScore') ?? THRESHOLDS.lowScore,
+    lowReadiness: t.readinessBelow ?? deviceDefault('readinessScore') ?? THRESHOLDS.lowScore,
+  };
+}
+
+/** The source with the most readings for a metric — the device whose scale the person's scores are on. */
+export function primarySource(state: Pick<AppState, 'wearableSamples'>, metric: WearableMetric): string | undefined {
+  const counts = new Map<string, number>();
+  for (const w of state.wearableSamples) if (w.metric === metric) counts.set(w.source, (counts.get(w.source) ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0];
+}
+
+const DEFAULT_RESOLVED: ResolvedThresholds = thresholdsFor({ patterns: { triggers: [], customTriggers: [], alleviators: [], exacerbators: [], warningSigns: [] } });
 
 /** Pseudo-exposure for "early warning signs noticed today". Not a trigger, but a strong short-term predictor. */
 export const PRODROME = 'prodrome';
@@ -38,21 +80,30 @@ export interface WearableDay {
   sleepMinutes?: number;
   sleepScore?: number;
   readinessScore?: number;
+  stressLevel?: number;
+  stressManagementScore?: number;
 }
 
 /** Exposures recorded explicitly, plus ones implied by the numbers the patient entered or the wearable measured. */
-export function effectiveExposures(log: DailyLog, wearable: WearableDay = {}): Set<string> {
+export function effectiveExposures(log: DailyLog, wearable: WearableDay = {}, t: ResolvedThresholds = DEFAULT_RESOLVED): Set<string> {
   const ex = new Set(log.exposures);
   const sleepH = log.sleepHours ?? (wearable.sleepMinutes !== undefined ? wearable.sleepMinutes / 60 : undefined);
-  if (sleepH !== undefined && sleepH < THRESHOLDS.shortSleepHours) ex.add('poor-sleep');
+  if (sleepH !== undefined && sleepH < t.shortSleepHours) ex.add('poor-sleep');
   if (log.sleepQuality !== undefined && log.sleepQuality <= THRESHOLDS.poorSleepQuality) ex.add('poor-sleep');
-  if (log.stress !== undefined && log.stress >= THRESHOLDS.highStress) ex.add('stress');
-  if (log.lunchTime && log.lunchTime >= THRESHOLDS.lateLunch) ex.add('late-meal');
+  // Self-rated stress wins; otherwise a wearable's stress reading, read in its own direction.
+  if (log.stress !== undefined) {
+    if (log.stress >= t.highStress) ex.add('stress');
+  } else if (wearable.stressLevel !== undefined) {
+    if (wearable.stressLevel >= THRESHOLDS.highStressLevel) ex.add('stress');
+  } else if (wearable.stressManagementScore !== undefined && wearable.stressManagementScore < THRESHOLDS.lowStressManagement) {
+    ex.add('stress');
+  }
+  if (log.lunchTime && log.lunchTime >= t.lateLunch) ex.add('late-meal');
   if (log.workHours !== undefined && log.workHours >= THRESHOLDS.longWorkHours) ex.add('long-workday');
   const sleepScore = log.sleepScore ?? wearable.sleepScore;
-  if (sleepScore !== undefined && sleepScore < THRESHOLDS.lowScore) ex.add('low-sleep-score');
+  if (sleepScore !== undefined && sleepScore < t.lowSleepScore) ex.add('low-sleep-score');
   const readiness = log.readinessScore ?? wearable.readinessScore;
-  if (readiness !== undefined && readiness < THRESHOLDS.lowScore) ex.add('low-readiness');
+  if (readiness !== undefined && readiness < t.lowReadiness) ex.add('low-readiness');
   if (log.warningSigns?.length) ex.add(PRODROME);
   return ex;
 }
@@ -82,10 +133,15 @@ export function relativeRisk(a: number, n1: number, c: number, n0: number): { rr
   return { rr, lo: Math.exp(Math.log(rr) - 1.96 * se), hi: Math.exp(Math.log(rr) + 1.96 * se) };
 }
 
+/**
+ * One value per day for a metric, from the person's main device for that metric only. Different
+ * vendors score on different scales (see deviceScoring.ts), so their readings are never averaged together.
+ */
 export function wearableByDate(state: Pick<AppState, 'wearableSamples'>, metric: WearableMetric): Map<ISODate, number> {
+  const source = primarySource(state, metric);
   const sums = new Map<ISODate, { s: number; n: number }>();
   for (const w of state.wearableSamples) {
-    if (w.metric !== metric) continue;
+    if (w.metric !== metric || w.source !== source) continue;
     const e = sums.get(w.date) ?? { s: 0, n: 0 };
     e.s += w.value;
     e.n += 1;
@@ -94,21 +150,30 @@ export function wearableByDate(state: Pick<AppState, 'wearableSamples'>, metric:
   return new Map([...sums].map(([d, { s, n }]) => [d, s / n]));
 }
 
-type PatternState = Pick<AppState, 'attacks' | 'dailyLogs' | 'wearableSamples' | 'periods'>;
+type PatternState = Pick<AppState, 'attacks' | 'dailyLogs' | 'wearableSamples' | 'periods'> & Partial<Pick<AppState, 'patterns'>>;
+
+/** Wearable readings for one day, averaged across sources. */
+export function wearableDay(state: Pick<AppState, 'wearableSamples'>, date: ISODate): WearableDay {
+  const pick = (metric: WearableMetric) => wearableByDate(state, metric).get(date);
+  return {
+    sleepMinutes: pick('sleepMinutes'),
+    sleepScore: pick('sleepScore'),
+    readinessScore: pick('readinessScore'),
+    stressLevel: pick('stressLevel'),
+    stressManagementScore: pick('stressManagementScore'),
+  };
+}
 
 /** Exposures for every check-in day, including wearable-derived ones and logged periods. */
 export function exposuresByLog(state: Omit<PatternState, 'attacks'>): Map<ISODate, Set<string>> {
-  const sleep = wearableByDate(state, 'sleepMinutes');
-  const sleepScore = wearableByDate(state, 'sleepScore');
-  const readiness = wearableByDate(state, 'readinessScore');
+  const metrics: (keyof WearableDay)[] = ['sleepMinutes', 'sleepScore', 'readinessScore', 'stressLevel', 'stressManagementScore'];
+  const series = Object.fromEntries(metrics.map((m) => [m, wearableByDate(state, m as WearableMetric)])) as Record<keyof WearableDay, Map<ISODate, number>>;
+  const t = state.patterns ? thresholdsFor({ patterns: state.patterns, wearableSamples: state.wearableSamples }) : DEFAULT_RESOLVED;
   const starts = cycleStarts(state);
   const out = new Map<ISODate, Set<string>>();
   for (const log of state.dailyLogs) {
-    const ex = effectiveExposures(log, {
-      sleepMinutes: sleep.get(log.date),
-      sleepScore: sleepScore.get(log.date),
-      readinessScore: readiness.get(log.date),
-    });
+    const w = Object.fromEntries(metrics.map((m) => [m, series[m].get(log.date)])) as WearableDay;
+    const ex = effectiveExposures(log, w, t);
     // "menstruation" as an exposure means the perimenstrual window (day −2 to +3 of a period start),
     // the window where risk is raised (MacGregor 2004; ICHD-3 A1.1), not just bleeding days.
     ex.delete('menstruation');
@@ -205,6 +270,8 @@ export const WEARABLE_METRIC_INFO: Record<WearableMetric, { label: string; unit:
   sleepMinutes: { label: 'Sleep (wearable)', unit: 'min' },
   sleepScore: { label: 'Sleep score (wearable)', unit: '' },
   readinessScore: { label: 'Readiness score (wearable)', unit: '' },
+  stressLevel: { label: 'Stress level (wearable, higher = more)', unit: '' },
+  stressManagementScore: { label: 'Stress management score (higher = calmer)', unit: '' },
   steps: { label: 'Steps', unit: '' },
   spo2: { label: 'SpO₂', unit: '%' },
   skinTempDeviation: { label: 'Skin temp deviation', unit: '°C' },
@@ -364,4 +431,70 @@ export function menstrualPattern(state: Pick<AppState, 'attacks' | 'dailyLogs' |
     meetsCriteria: starts.length >= 3 && cyclesWithAttack / starts.length >= 2 / 3,
     pure: relevant.length > 0 && attacksInWindow === relevant.length,
   };
+}
+
+export interface ScoreBand {
+  label: string;
+  from: number;
+  /** Exclusive upper bound. */
+  to: number;
+  days: number;
+  daysFollowedByAttack: number;
+  attackRate: number;
+}
+
+export interface ThresholdSuggestion {
+  /** Days with a score below this were followed by more attacks. */
+  below: number;
+  relativeRisk: number;
+  exposedDays: number;
+}
+
+/** One value per day for a 0–100 score: the check-in value if entered, else the wearable's. */
+function dailyScores(state: PatternState, metric: 'sleepScore' | 'readinessScore'): Map<ISODate, number> {
+  const out = wearableByDate(state, metric);
+  for (const l of state.dailyLogs) {
+    const v = l[metric];
+    if (typeof v === 'number') out.set(l.date, v);
+  }
+  return out;
+}
+
+/** How often an attack started the same or next day, by score band. Shows a person's own dose–response. */
+export function scoreBands(state: PatternState, metric: 'sleepScore' | 'readinessScore', edges = [0, 50, 60, 70, 80, 101]): ScoreBand[] {
+  const onsets = attackOnsetDates(state);
+  const scores = dailyScores(state, metric);
+  return edges.slice(0, -1).map((from, i) => {
+    const to = edges[i + 1];
+    const days = [...scores].filter(([, v]) => v >= from && v < to).map(([d]) => d);
+    const hit = days.filter((d) => attackFollows(d, onsets)).length;
+    return {
+      label: i === 0 ? `under ${to}` : to > 100 ? `${from}+` : `${from}–${to - 1}`,
+      from,
+      to,
+      days: days.length,
+      daysFollowedByAttack: hit,
+      attackRate: days.length ? hit / days.length : 0,
+    };
+  });
+}
+
+/**
+ * Finds the cut-off below which this person's attacks become clearly more likely: the threshold
+ * with the highest relative risk whose 95% CI excludes 1, with at least 5 days on each side.
+ */
+export function suggestThreshold(state: PatternState, metric: 'sleepScore' | 'readinessScore'): ThresholdSuggestion | null {
+  const onsets = attackOnsetDates(state);
+  const scores = [...dailyScores(state, metric)];
+  let best: ThresholdSuggestion | null = null;
+  for (let below = 40; below <= 80; below += 5) {
+    const exposed = scores.filter(([, v]) => v < below);
+    const other = scores.filter(([, v]) => v >= below);
+    if (exposed.length < 5 || other.length < 5) continue;
+    const a = exposed.filter(([d]) => attackFollows(d, onsets)).length;
+    const c = other.filter(([d]) => attackFollows(d, onsets)).length;
+    const { rr, lo } = relativeRisk(a, exposed.length, c, other.length);
+    if (lo > 1 && (!best || rr > best.relativeRisk)) best = { below, relativeRisk: rr, exposedDays: exposed.length };
+  }
+  return best;
 }

@@ -10,7 +10,8 @@ import {
   effectiveExposures,
   exposuresByLog,
   inPerimenstrualWindow,
-  wearableByDate,
+  thresholdsFor,
+  wearableDay,
 } from './patterns';
 import { DEFAULT_PRIOR, SELF_REPORT_RR, TRIGGER_PRIORS } from './priors';
 
@@ -222,15 +223,12 @@ export function predictFromExposures(model: RiskModel, exposures: Map<string, Co
 /** Exposures for a day: the check-in (if any), wearable readings and the period forecast. */
 export function exposuresForDay(state: AppState, date: ISODate, log?: DailyLog): Map<string, Contributor['via']> {
   const out = new Map<string, Contributor['via']>();
-  const wearable = {
-    sleepMinutes: wearableByDate(state, 'sleepMinutes').get(date),
-    sleepScore: wearableByDate(state, 'sleepScore').get(date),
-    readinessScore: wearableByDate(state, 'readinessScore').get(date),
-  };
-  const fromWearable = effectiveExposures({ date, exposures: [], headache: false }, wearable);
+  const wearable = wearableDay(state, date);
+  const t = thresholdsFor(state);
+  const fromWearable = effectiveExposures({ date, exposures: [], headache: false }, wearable, t);
   for (const id of fromWearable) out.set(id, 'wearable');
   if (log) {
-    for (const id of effectiveExposures(log, wearable)) {
+    for (const id of effectiveExposures(log, wearable, t)) {
       if (id !== 'menstruation') out.set(id, id === PRODROME ? 'warning signs' : out.get(id) ?? 'check-in');
     }
   }

@@ -26,7 +26,7 @@ Migraine tracking with a guideline-based clinical decision support engine. It le
 - **Alerts:** 13 rule groups covering red flags, medication overuse (ICHD-3), prevention (AAN/AHS 2026), acute response, interactions, medicine changes, family history, supplements, patterns, wearables and data quality. Every alert links to its guideline. Alerts with clinician-only detail never reach the patient view.
 - **Medicines:** the full list of everything the patient takes, plus supplements, family history and the MIDAS questionnaire.
 - **Doctor report:** one printable page.
-- **Wearables:** Oura, Fitbit, Garmin, Whoop, Polar and others through [Open Wearables](https://github.com/the-momentum/open-wearables), plus CSV import. Apple Watch needs a companion app or CSV export, because Apple Health has no web API.
+- **Wearables:** each device's scoring method (ranges, bands, direction, HRV type) is built in (`shared/engine/domain/deviceScoring.ts`), so scores are read on their own scale, devices are never mixed, and each person can set their own cut-offs (for example, sleep score below 50). Oura, Fitbit, Garmin, Whoop, Polar and others connect through [Open Wearables](https://github.com/the-momentum/open-wearables), plus CSV import. Apple Watch needs a companion app or CSV export, because Apple Health has no web API.
 
 ## Running it
 
@@ -65,7 +65,7 @@ npm run db:claim-legacy -- <your-user-id> America/Chicago
 The script:
 
 - assigns your old water, meal, supplement and period logs to your account, with local dates and times;
-- copies old health scores and migraine logs into check-ins and attacks. The old stress-management score, where higher was better, becomes stress on a 0–10 scale, where higher means more stress.
+- copies old health scores and migraine logs into check-ins and attacks. The old stress score was a device stress-management score, where higher means calmer, so it is kept as that measure rather than turned into self-rated stress.
 
 The old tables are not changed.
 

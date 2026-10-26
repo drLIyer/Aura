@@ -6,7 +6,8 @@
  * - Assigns water, meal, supplement and period rows with user_id 'legacy' to <userId>,
  *   filling in local dates/times from their timestamps in [timeZone] (default UTC).
  * - Copies the old health_metrics, lifestyle_log and migraine_log tables into the new
- *   check-in and attack tables for <userId>. The old tables are left untouched.
+ *   check-in, wearable and attack tables for <userId>. The old stress score (higher = calmer)
+ *   becomes a stress-management reading, not self-rated stress. The old tables are left untouched.
  *
  * The user id is the "sub" of the Replit account (shown at /api/auth/user once signed in).
  */
@@ -62,6 +63,7 @@ async function main() {
 
   const lifestyle = await db.select().from(schema.legacyLifestyleLog);
   const caffeineByDate = new Map(lifestyle.filter((l) => l.caffeineIntake != null).map((l) => [localDate(l.timestamp, tz), l.caffeineIntake!]));
+  const legacyScores = [];
   for (const m of await db.select().from(schema.legacyHealthMetrics)) {
     await storage.upsertDailyLog(
       userId,
@@ -69,14 +71,15 @@ async function main() {
       dailyLogInput.parse({
         readinessScore: m.readiness,
         sleepScore: m.sleep,
-        // The old "stress" was a 0–100 stress-management score where higher was better.
-        // The new field is 0–10 where higher means more stress.
-        stress: Math.round((100 - Math.min(100, Math.max(0, m.stress))) / 10),
         caffeineMg: caffeineByDate.get(m.date),
         notes: "Imported from the first version of the app",
       }),
     );
+    // The old "stress" was a device stress-management score (higher = calmer, e.g. Fitbit's).
+    // It is kept as that measure rather than converted into self-rated stress.
+    legacyScores.push({ date: m.date, metric: "stressManagementScore", value: m.stress, source: "legacy-import" });
   }
+  await storage.upsertWearableSamples(userId, legacyScores);
 
   const meds = new Map((await storage.listMedications(userId)).map((m) => [m.name, m.id]));
   const medId = async (name: string) => {

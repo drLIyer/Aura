@@ -39,7 +39,7 @@ export function demoState(today: string = toISODate(new Date()), days = 120): Ap
     const dow = parseISODate(date).getDay();
     const cycleDay = (i + 9) % cycleLength;
     const menstruating = cycleDay < 5;
-    const sleepHours = Math.round((7.2 + (rnd() - 0.5) * 2.4 - (rnd() < 0.15 ? 1.8 : 0)) * 2) / 2;
+    const sleepHours = Math.round((7.2 + (rnd() - 0.5) * 2.4 - (rnd() < 0.18 ? 2.2 : 0)) * 2) / 2;
     const workHours = dow === 0 || dow === 6 ? 0 : Math.round(8 + rnd() * 3.5);
     const lateLunch = dow > 0 && dow < 6 && rnd() < 0.22;
     const conflict = rnd() < 0.06;
@@ -56,11 +56,11 @@ export function demoState(today: string = toISODate(new Date()), days = 120): Ap
     const rhr = Math.round(58 + (80 - readiness) / 6 + (rnd() - 0.5) * 3);
     const hrv = Math.round(48 - (80 - readiness) / 3 + (rnd() - 0.5) * 8);
 
-    // Planted relative risks: period ×3, late lunch ×2.5, short sleep ×2, conflict ×3, long day ×1.8.
-    let risk = 0.08;
+    // Planted relative risks: period ×3, late lunch ×2.5, sleep score under 50 ×5, conflict ×3, long day ×1.8.
+    let risk = 0.05;
     if (cycleDay >= cycleLength - 2 || cycleDay <= 2) risk *= 3;
     if (lateLunch) risk *= 2.5;
-    if (sleepHours < 6) risk *= 2;
+    if (sleepScore < 50) risk *= 5;
     if (conflict) risk *= 3;
     if (workHours >= 10) risk *= 1.8;
     const attackToday = date >= nextAttackAllowed && rnd() < Math.min(risk, 0.85);
@@ -82,12 +82,12 @@ export function demoState(today: string = toISODate(new Date()), days = 120): Ap
       headache: attackToday,
     });
     samples.push(
-      { date, metric: 'sleepMinutes', value: Math.round(sleepHours * 60), source: 'demo-ring' },
-      { date, metric: 'sleepScore', value: sleepScore, source: 'demo-ring' },
-      { date, metric: 'readinessScore', value: readiness, source: 'demo-ring' },
-      { date, metric: 'restingHeartRate', value: rhr, source: 'demo-ring' },
-      { date, metric: 'hrvRmssd', value: hrv, source: 'demo-ring' },
-      { date, metric: 'steps', value: Math.round(4000 + rnd() * 7000), source: 'demo-ring' },
+      { date, metric: 'sleepMinutes', value: Math.round(sleepHours * 60), source: 'oura' },
+      { date, metric: 'sleepScore', value: sleepScore, source: 'oura' },
+      { date, metric: 'readinessScore', value: readiness, source: 'oura' },
+      { date, metric: 'restingHeartRate', value: rhr, source: 'oura' },
+      { date, metric: 'hrvRmssd', value: hrv, source: 'oura' },
+      { date, metric: 'steps', value: Math.round(4000 + rnd() * 7000), source: 'oura' },
     );
 
     if (attackToday) {

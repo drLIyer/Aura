@@ -17,6 +17,13 @@ describe("wearable CSV import", () => {
     expect(r.samples).toContainEqual({ date: "2026-10-03", metric: "sleepMinutes", value: 371 });
   });
 
+  it("keeps Garmin stress level and Fitbit stress management score apart", () => {
+    const csv = "Date,Avg Stress Level,Stress Management Score\n2026-10-04,62,48\n";
+    const r = parseWearableCsv(csv);
+    expect(r.samples).toContainEqual({ date: "2026-10-04", metric: "stressLevel", value: 62 });
+    expect(r.samples).toContainEqual({ date: "2026-10-04", metric: "stressManagementScore", value: 48 });
+  });
+
   it("parses common date formats without shifting the day", () => {
     expect(parseCsvDate("10/05/2026")).toBe("2026-10-05");
     expect(parseCsvDate("2026-10-05T23:59:00Z")).toBe("2026-10-05");

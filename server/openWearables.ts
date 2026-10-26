@@ -115,6 +115,30 @@ export interface ActivitySummary {
   steps?: number | null;
 }
 
+export interface TimeSeriesSample {
+  timestamp: string;
+  value: number;
+  /** The gateway reports local offsets separately; the timestamp's own date is the user's day. */
+  zone_offset?: string | null;
+  source?: SourceMeta;
+}
+
+/** Averages time-series readings into one value per calendar day and source. Negative values (no reading) are skipped. */
+export function dailyMeans(series: TimeSeriesSample[], metric: string): WearableSampleRecord[] {
+  const acc = new Map<string, { sum: number; n: number; date: string; source: string }>();
+  for (const s of series) {
+    if (!Number.isFinite(s.value) || s.value < 0) continue;
+    const date = s.timestamp.slice(0, 10);
+    const source = sourceName(s.source);
+    const key = `${date}|${source}`;
+    const e = acc.get(key) ?? { sum: 0, n: 0, date, source };
+    e.sum += s.value;
+    e.n += 1;
+    acc.set(key, e);
+  }
+  return [...acc.values()].map((e) => ({ date: e.date, metric, value: Math.round(e.sum / e.n), source: e.source }));
+}
+
 const sourceName = (s?: SourceMeta) => (s?.provider ?? s?.name ?? PROVIDER).toString().toLowerCase();
 
 export function normalizeSummaries(sleep: SleepSummary[], recovery: RecoverySummary[], activity: ActivitySummary[]): WearableSampleRecord[] {
@@ -157,6 +181,18 @@ export async function syncUser(client: OpenWearablesClient, storage: IStorage, u
     client.paginate<ActivitySummary>(`${base}/activity`, range),
   ]);
   const samples = normalizeSummaries(sleep, recovery, activity);
+  // Garmin's stress level (0–100, higher = more stress) only exists as a time series: average it per day.
+  try {
+    const stress = await client.paginate<TimeSeriesSample>(`/api/v1/users/${encodeURIComponent(link.externalUserId)}/timeseries`, {
+      start_time: `${from}T00:00:00`,
+      end_time: `${to}T23:59:59`,
+      types: "garmin_stress_level",
+      resolution: "1hour",
+    });
+    samples.push(...dailyMeans(stress, "stressLevel"));
+  } catch (err) {
+    console.error("[aura] stress time series unavailable:", (err as Error).message);
+  }
   await storage.upsertWearableSamples(userId, samples);
   await storage.saveIntegration(userId, { ...link, lastSyncedAt: new Date() });
   return samples.length;

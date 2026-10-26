@@ -8,6 +8,10 @@ import { formatShortDate } from "@/lib/dates";
 import { apiJson, invalidateAll } from "@/lib/queryClient";
 import { parseWearableCsv, type CsvParseResult } from "@shared/wearableCsv";
 import { WEARABLE_METRIC_INFO } from "@shared/engine/cds/patterns";
+import { DEVICES, bandLabel, deviceById } from "@shared/engine/domain/deviceScoring";
+import DeviceScoringCard from "@/components/DeviceScoringCard";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { ProfileRecord } from "@/lib/types";
 
 interface Status {
   configured: boolean;
@@ -35,14 +39,17 @@ const NAMES: Record<string, string> = {
   google: "Google Health",
 };
 
-const SHOWN_METRICS: (keyof typeof WEARABLE_METRIC_INFO)[] = ["sleepMinutes", "sleepScore", "readinessScore", "restingHeartRate", "hrvRmssd", "hrvSdnn", "steps"];
+const SHOWN_METRICS: (keyof typeof WEARABLE_METRIC_INFO)[] = ["sleepMinutes", "sleepScore", "readinessScore", "stressLevel", "stressManagementScore", "restingHeartRate", "hrvRmssd", "hrvSdnn"];
 
 export default function Wearables({ date }: { date: string }) {
   const { toast } = useToast();
   const { data: status } = useQuery<Status>({ queryKey: ["/api/wearables/status"] });
   const { data: providers = [] } = useQuery<string[]>({ queryKey: ["/api/wearables/providers"] });
   const { data: samples = [] } = useQuery<Sample[]>({ queryKey: [`/api/wearables/samples?date=${date}&days=14`] });
+  const { data: allSamples = [] } = useQuery<Sample[]>({ queryKey: [`/api/wearables/samples?date=${date}&days=120`] });
+  const { data: profile } = useQuery<ProfileRecord>({ queryKey: ["/api/profile"] });
   const [parsed, setParsed] = useState<(CsvParseResult & { source: string }) | null>(null);
+  const [csvDevice, setCsvDevice] = useState("oura");
 
   const onError = (e: Error) => toast({ title: "Something went wrong", description: e.message, variant: "destructive" });
   const connect = useMutation({
@@ -76,15 +83,20 @@ export default function Wearables({ date }: { date: string }) {
     reader.onload = () => {
       const result = parseWearableCsv(String(reader.result));
       if (!result.samples.length) toast({ title: "No readings found", description: "Couldn't find a date column and any sleep, heart rate, HRV, readiness or step columns.", variant: "destructive" });
-      setParsed({ ...result, source: `csv:${file.name.replace(/\.[^.]+$/, "").slice(0, 40)}` });
+      // The source is the device, so its scores are read on that device's scale.
+      setParsed({ ...result, source: csvDevice === "other" ? `csv:${file.name.replace(/\.[^.]+$/, "").slice(0, 40)}` : csvDevice });
     };
     reader.readAsText(file);
   };
 
+  const sourceIds = new Set([...allSamples.map((s) => s.source), ...(status?.connections ?? []).map((c) => c.provider)]);
+  const myDevices = DEVICES.filter((d) => [...sourceIds].some((id) => deviceById(id)?.id === d.id));
+  const sourceByMetric = new Map(samples.map((s) => [s.metric, s.source]));
   const connected = new Set((status?.connections ?? []).filter((c) => c.status === "active").map((c) => c.provider));
   const byDate = new Map<string, Partial<Record<string, number>>>();
   for (const s of samples) byDate.set(s.date, { ...byDate.get(s.date), [s.metric]: s.value });
   const dates = [...byDate.keys()].sort().reverse();
+  const columns = SHOWN_METRICS.filter((m) => samples.some((s) => s.metric === m));
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -143,7 +155,23 @@ export default function Wearables({ date }: { date: string }) {
       <Card className="p-6 space-y-3">
         <h2 className="text-lg font-semibold">Import a CSV</h2>
         <p className="text-sm text-muted-foreground">Works with daily exports from Oura, Whoop, Fitbit, Garmin and others: a date column plus any of sleep, sleep score, readiness, resting heart rate, HRV, SpO₂ or steps.</p>
-        <input type="file" accept=".csv,text/csv" onChange={(e) => onFile(e.target.files?.[0])} aria-label="Choose CSV file" data-testid="input-wearable-csv" />
+        <div className="flex flex-wrap items-center gap-3">
+          <Select value={csvDevice} onValueChange={setCsvDevice}>
+            <SelectTrigger className="w-56" aria-label="Which device is this export from?">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {DEVICES.map((d) => (
+                <SelectItem key={d.id} value={d.id}>
+                  {d.name}
+                </SelectItem>
+              ))}
+              <SelectItem value="other">Other device</SelectItem>
+            </SelectContent>
+          </Select>
+          <input type="file" accept=".csv,text/csv" onChange={(e) => onFile(e.target.files?.[0])} aria-label="Choose CSV file" data-testid="input-wearable-csv" />
+        </div>
+        <p className="text-xs text-muted-foreground">Choosing the device matters: each vendor scores sleep, readiness and stress differently.</p>
         {parsed && parsed.samples.length > 0 && (
           <div className="rounded-md bg-muted p-3 text-sm space-y-2">
             <p>
@@ -158,6 +186,15 @@ export default function Wearables({ date }: { date: string }) {
         )}
       </Card>
 
+      {myDevices.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold">How your devices measure and score</h2>
+          {myDevices.map((d) => (
+            <DeviceScoringCard key={d.id} device={d} thresholds={{ sleepScore: profile?.patterns.thresholds?.sleepScoreBelow, readinessScore: profile?.patterns.thresholds?.readinessBelow }} />
+          ))}
+        </div>
+      )}
+
       <Card className="p-6">
         <h2 className="text-lg font-semibold mb-3">Last 14 days</h2>
         {dates.length === 0 ? (
@@ -168,7 +205,7 @@ export default function Wearables({ date }: { date: string }) {
               <thead className="text-left text-muted-foreground">
                 <tr>
                   <th className="py-1 pr-3">Date</th>
-                  {SHOWN_METRICS.map((m) => (
+                  {columns.map((m) => (
                     <th key={m} className="pr-3">
                       {WEARABLE_METRIC_INFO[m].label}
                     </th>
@@ -179,9 +216,12 @@ export default function Wearables({ date }: { date: string }) {
                 {dates.map((d) => (
                   <tr key={d} className="border-t border-border">
                     <td className="py-1 pr-3">{formatShortDate(d)}</td>
-                    {SHOWN_METRICS.map((m) => (
+                    {columns.map((m) => (
                       <td key={m} className="pr-3">
                         {byDate.get(d)?.[m] === undefined ? "—" : m === "sleepMinutes" ? `${(byDate.get(d)![m]! / 60).toFixed(1)} h` : Math.round(byDate.get(d)![m]!)}
+                        {byDate.get(d)?.[m] !== undefined && bandLabel(sourceByMetric.get(m), m, byDate.get(d)![m]!) && (
+                          <span className="block text-[10px] text-muted-foreground">{bandLabel(sourceByMetric.get(m), m, byDate.get(d)![m]!)}</span>
+                        )}
                       </td>
                     ))}
                   </tr>

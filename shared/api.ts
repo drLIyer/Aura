@@ -139,6 +139,15 @@ export const patternsInput = z.object({
   alleviators: ids.default([]),
   exacerbators: ids.default([]),
   warningSigns: ids.default([]),
+  thresholds: z
+    .object({
+      sleepScoreBelow: z.number().int().min(1).max(100).optional(),
+      readinessBelow: z.number().int().min(1).max(100).optional(),
+      stressAtLeast: z.number().int().min(1).max(10).optional(),
+      lateLunchAfter: hhmm.optional(),
+      shortSleepHours: z.number().min(1).max(12).optional(),
+    })
+    .optional(),
   notes: longText.optional(),
 });
 export type PatternsInput = z.infer<typeof patternsInput>;
@@ -164,7 +173,7 @@ export const midasInput = z.object({
 });
 
 export const WEARABLE_METRICS = [
-  "restingHeartRate", "hrvRmssd", "hrvSdnn", "sleepMinutes", "sleepScore", "readinessScore", "steps", "spo2", "skinTempDeviation", "heartRate",
+  "restingHeartRate", "hrvRmssd", "hrvSdnn", "sleepMinutes", "sleepScore", "readinessScore", "stressLevel", "stressManagementScore", "steps", "spo2", "skinTempDeviation", "heartRate",
 ] as const;
 
 export const wearableImport = z.object({

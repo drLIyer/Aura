@@ -200,3 +200,48 @@ describe('medicine changes and cycles', () => {
     expect(status.averageLength).toBe(28);
   });
 });
+
+describe('personal thresholds and devices', () => {
+  const days = (n: number) => Array.from({ length: n }, (_, i) => addDays(TODAY, -i - 2));
+
+  it('uses the person\'s own sleep-score cut-off', async () => {
+    const { exposuresByLog } = await import('../patterns');
+    const s = emptyState();
+    s.dailyLogs = [{ date: TODAY, sleepScore: 55, exposures: [], headache: false }];
+    expect(exposuresByLog(s).get(TODAY)!.has('low-sleep-score')).toBe(true);
+    s.patterns.thresholds = { sleepScoreBelow: 50 };
+    expect(exposuresByLog(s).get(TODAY)!.has('low-sleep-score')).toBe(false);
+  });
+
+  it('defaults to the device\'s own cut-off and never mixes devices', async () => {
+    const { thresholdsFor, wearableByDate } = await import('../patterns');
+    const s = emptyState();
+    s.wearableSamples = [
+      ...days(10).map((date) => ({ date, metric: 'sleepScore' as const, value: 65, source: 'apple' })),
+      { date: TODAY, metric: 'sleepScore', value: 90, source: 'fitbit' },
+    ];
+    expect(thresholdsFor(s).lowSleepScore).toBe(61); // Apple's "Low" band starts below 61
+    expect(wearableByDate(s, 'sleepScore').has(TODAY)).toBe(false); // the Fitbit reading is not mixed in
+  });
+
+  it('reads stress scores in each vendor\'s direction', async () => {
+    const { effectiveExposures } = await import('../patterns');
+    const log = { date: TODAY, exposures: [], headache: false };
+    expect(effectiveExposures(log, { stressLevel: 80 }).has('stress')).toBe(true); // Garmin: high = stressed
+    expect(effectiveExposures(log, { stressManagementScore: 80 }).has('stress')).toBe(false); // Fitbit: high = calm
+    expect(effectiveExposures(log, { stressManagementScore: 45 }).has('stress')).toBe(true);
+    expect(effectiveExposures({ ...log, stress: 2 }, { stressLevel: 90 }).has('stress')).toBe(false); // self-rating wins
+  });
+
+  it('finds the sleep-score cut-off below which attacks become more likely', async () => {
+    const { scoreBands, suggestThreshold } = await import('../patterns');
+    const s = emptyState();
+    const ds = days(60);
+    s.dailyLogs = ds.map((date, i) => ({ date, sleepScore: i % 3 === 0 ? 45 : 78, exposures: [], headache: false }));
+    s.attacks = ds.filter((_, i) => i % 3 === 0).map((d) => attack(d));
+    const bands = scoreBands(s, 'sleepScore');
+    expect(bands[0]).toMatchObject({ label: 'under 50', days: 20 });
+    expect(bands[0].attackRate).toBeGreaterThan(bands[3].attackRate);
+    expect(suggestThreshold(s, 'sleepScore')?.below).toBeLessThanOrEqual(50);
+  });
+});

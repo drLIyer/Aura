@@ -1,4 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { apiJson, invalidateAll } from "@/lib/queryClient";
+import { deviceById } from "@shared/engine/domain/deviceScoring";
+import type { ProfileRecord } from "@/lib/types";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import CycleAnalyticsChart, { type CyclePhaseRow } from "@/components/CycleAnalyticsChart";
@@ -20,7 +24,17 @@ interface InsightsData {
   cycleCorrelation: CyclePhaseRow[];
   backtest: Backtest | null;
   loggedDays: number;
+  scores: {
+    metric: "sleepScore" | "readinessScore";
+    source: string | null;
+    bands: { label: string; days: number; daysFollowedByAttack: number; attackRate: number }[];
+    suggestion: { below: number; relativeRisk: number; exposedDays: number } | null;
+    currentThreshold: number;
+    personal: boolean;
+  }[];
 }
+
+const SCORE_NAME = { sleepScore: "Sleep score", readinessScore: "Readiness / recovery score" } as const;
 
 const x = (n?: number) => (n === undefined ? "—" : `×${n.toFixed(1)}`);
 
@@ -38,6 +52,14 @@ export default function Insights({ date }: { date: string }) {
   const { data } = useQuery<InsightsData>({ queryKey: [`/api/insights?date=${date}`] });
   const { data: trends = [] } = useQuery<{ date: string; readiness: number | null; sleep: number | null; stress: number | null; migraine: number }[]>({
     queryKey: [`/api/trends?date=${date}&days=30`],
+  });
+  const { data: profile } = useQuery<ProfileRecord>({ queryKey: ["/api/profile"] });
+  const applyThreshold = useMutation({
+    mutationFn: ({ metric, below }: { metric: "sleepScore" | "readinessScore"; below: number }) =>
+      apiJson("/api/profile", "PUT", {
+        patterns: { ...profile!.patterns, thresholds: { ...profile!.patterns.thresholds, [metric === "sleepScore" ? "sleepScoreBelow" : "readinessBelow"]: below } },
+      }),
+    onSuccess: () => invalidateAll(),
   });
   if (!data) return <p className="text-muted-foreground">Loading…</p>;
   const s = data.summary30;
@@ -95,6 +117,46 @@ export default function Insights({ date }: { date: string }) {
           </div>
         )}
       </Card>
+
+      {data.scores
+        .filter((sc) => sc.bands.some((b) => b.days > 0))
+        .map((sc) => (
+          <Card key={sc.metric} className="p-6" data-testid={`card-bands-${sc.metric}`}>
+            <h2 className="text-lg font-semibold">
+              {SCORE_NAME[sc.metric]} and your attacks{sc.source && deviceById(sc.source) ? ` (${deviceById(sc.source)!.name})` : ""}
+            </h2>
+            <p className="text-sm text-muted-foreground mb-4">How often an attack started the same day or the next, by score.</p>
+            <div className="space-y-2">
+              {sc.bands
+                .filter((b) => b.days > 0)
+                .map((b) => (
+                  <div key={b.label} className="grid grid-cols-[6rem_1fr_9rem] items-center gap-3 text-sm">
+                    <span>{b.label}</span>
+                    <div className="h-3 bg-muted rounded-full overflow-hidden">
+                      <div className="h-full bg-primary rounded-full" style={{ width: `${Math.round(b.attackRate * 100)}%` }} />
+                    </div>
+                    <span className="text-muted-foreground">
+                      {Math.round(b.attackRate * 100)}% of {b.days} days
+                    </span>
+                  </div>
+                ))}
+            </div>
+            <div className="mt-4 text-sm flex flex-wrap items-center justify-between gap-3">
+              <span>
+                Counting a {SCORE_NAME[sc.metric].toLowerCase()} below <strong>{sc.currentThreshold}</strong> as low
+                {sc.personal ? " (your setting)" : " (device default)"}.
+                {sc.suggestion &&
+                  sc.suggestion.below !== sc.currentThreshold &&
+                  ` Your data points to below ${sc.suggestion.below}: attacks ${sc.suggestion.relativeRisk.toFixed(1)}× as likely after those days.`}
+              </span>
+              {sc.suggestion && sc.suggestion.below !== sc.currentThreshold && profile && (
+                <Button size="sm" onClick={() => applyThreshold.mutate({ metric: sc.metric, below: sc.suggestion!.below })} disabled={applyThreshold.isPending}>
+                  Use below {sc.suggestion.below}
+                </Button>
+              )}
+            </div>
+          </Card>
+        ))}
 
       {trends.length > 0 && <TrendsChart data={trends} days={30} />}
 
