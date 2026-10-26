@@ -28,6 +28,12 @@ export interface Attack {
   symptoms: string[];
   /** Duration of aura in minutes, if any aura symptoms were present. */
   auraMinutes?: number;
+  /** How the aura began: typical aura builds up over 5+ minutes. */
+  auraOnset?: 'gradual' | 'sudden' | 'unsure';
+  /** Did it spread or move over a few minutes ("march")? */
+  auraSpread?: boolean;
+  /** Was it like the patient's usual aura? */
+  auraUsual?: boolean;
   worsenedByActivity: boolean;
   triggers: string[];
   alleviators: string[];

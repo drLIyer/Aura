@@ -1,580 +1,629 @@
 import { randomUUID } from "crypto";
+import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
+import type {
+  AttackInput,
+  DailyLogInput,
+  MedicationInput,
+  PatternsInput,
+  ProfileInput,
+  SupplementInput,
+} from "@shared/api";
+import * as schema from "@shared/schema";
+import { emptyState } from "@shared/engine/state";
 
-interface WaterEntry {
+/**
+ * Persistence. Every method takes the signed-in user's id, and every query filters on it,
+ * so one user can never read or change another user's data.
+ */
+
+export interface ProfileRecord {
+  profile: ProfileInput;
+  patterns: PatternsInput;
+  timezone: string | null;
+}
+export interface MedicationRecord extends MedicationInput {
+  id: string;
+}
+export interface SupplementRecord extends SupplementInput {
+  id: string;
+}
+export interface AttackRecord extends AttackInput {
+  id: string;
+}
+export interface DailyLogRecord extends DailyLogInput {
+  date: string;
+}
+export interface WaterRecord {
   id: string;
   timestamp: Date;
+  localDate: string | null;
   amount: number;
 }
-
-interface SupplementEntry {
+export interface MealRecord {
   id: string;
   timestamp: Date;
+  localDate: string | null;
+  localTime: string | null;
+  type: string;
+}
+export interface SupplementIntakeRecord {
+  id: string;
+  timestamp: Date;
+  localDate: string | null;
   name: string;
   dosage: string;
 }
-
-interface MealEntry {
-  id: string;
-  timestamp: Date;
-  type: string;
-}
-
-interface MigraineEntry {
-  id: string;
-  timestamp: Date;
-  severity: number;
-  duration: number;
-  symptoms: string[];
-  triggers: string;
-  notes: string;
-  medications?: string;
-}
-
-interface CycleEntry {
+export interface PeriodRecord {
   id: string;
   startDate: string;
-  endDate?: string;
-  cycleLength?: number;
+  endDate: string | null;
 }
-
-interface UserProfileEntry {
-  id: string;
-  userId: string;
-  age?: number;
-  sex?: string;
-  contraceptiveUse?: string;
+export interface WearableSampleRecord {
+  date: string;
+  metric: string;
+  value: number;
+  source: string;
 }
-
-interface LifestyleEntry {
-  id: string;
-  timestamp: Date;
-  caffeineIntake?: number;
-  alcoholIntake?: number;
-  perceivedStress?: number;
-}
-
-interface HealthMetricsEntry {
+export interface MidasRecord {
   id: string;
   date: string;
-  readiness: number;
-  sleep: number;
-  stress: number;
+  answers: [number, number, number, number, number];
+}
+export interface IntegrationRecord {
+  provider: string;
+  externalUserId: string;
+  lastSyncedAt: Date | null;
 }
 
 export interface IStorage {
-  getWaterLog(date?: string): Promise<WaterEntry[]>;
-  addWaterLog(amount: number, date?: string): Promise<WaterEntry>;
-  getSupplementLog(date?: string): Promise<SupplementEntry[]>;
-  addSupplementLog(name: string, dosage: string, date?: string): Promise<SupplementEntry>;
-  getMealLog(): Promise<MealEntry[]>;
-  addMealLog(type: string): Promise<MealEntry>;
-  getMigraineLog(): Promise<MigraineEntry[]>;
-  addMigraineLog(severity: number, duration: number, symptoms: string[], triggers: string, notes: string, medications?: string): Promise<MigraineEntry>;
-  getCycleLog(): Promise<CycleEntry[]>;
-  addCycleLog(startDate: string, endDate?: string): Promise<CycleEntry>;
-  getUserProfile(): Promise<UserProfileEntry | null>;
-  updateUserProfile(age?: number, sex?: string, contraceptiveUse?: string): Promise<UserProfileEntry>;
-  getLifestyleLog(): Promise<LifestyleEntry[]>;
-  addLifestyleLog(caffeineIntake?: number, alcoholIntake?: number, perceivedStress?: number): Promise<LifestyleEntry>;
-  getHealthMetrics(date: string): Promise<HealthMetricsEntry | null>;
-  upsertHealthMetrics(date: string, readiness: number, sleep: number, stress: number): Promise<HealthMetricsEntry>;
-  getHealthMetricsTrend(days: number): Promise<HealthMetricsEntry[]>;
+  getProfile(userId: string): Promise<ProfileRecord>;
+  saveProfile(userId: string, update: Partial<ProfileRecord>): Promise<ProfileRecord>;
+
+  listMedications(userId: string): Promise<MedicationRecord[]>;
+  createMedication(userId: string, input: MedicationInput): Promise<MedicationRecord>;
+  updateMedication(userId: string, id: string, input: MedicationInput): Promise<MedicationRecord | null>;
+  deleteMedication(userId: string, id: string): Promise<boolean>;
+
+  listSupplements(userId: string): Promise<SupplementRecord[]>;
+  createSupplement(userId: string, input: SupplementInput): Promise<SupplementRecord>;
+  updateSupplement(userId: string, id: string, input: SupplementInput): Promise<SupplementRecord | null>;
+  deleteSupplement(userId: string, id: string): Promise<boolean>;
+
+  listAttacks(userId: string): Promise<AttackRecord[]>;
+  createAttack(userId: string, input: AttackInput): Promise<AttackRecord>;
+  updateAttack(userId: string, id: string, input: AttackInput): Promise<AttackRecord | null>;
+  deleteAttack(userId: string, id: string): Promise<boolean>;
+
+  listDailyLogs(userId: string, from?: string, to?: string): Promise<DailyLogRecord[]>;
+  upsertDailyLog(userId: string, date: string, input: DailyLogInput): Promise<DailyLogRecord>;
+
+  listWater(userId: string, localDate?: string): Promise<WaterRecord[]>;
+  addWater(userId: string, amount: number, localDate: string): Promise<WaterRecord>;
+  deleteWater(userId: string, id: string): Promise<boolean>;
+
+  listMeals(userId: string, localDate?: string): Promise<MealRecord[]>;
+  addMeal(userId: string, type: string, localDate: string, localTime: string): Promise<MealRecord>;
+  deleteMeal(userId: string, id: string): Promise<boolean>;
+
+  listSupplementIntake(userId: string, localDate?: string): Promise<SupplementIntakeRecord[]>;
+  addSupplementIntake(userId: string, name: string, dosage: string, localDate: string): Promise<SupplementIntakeRecord>;
+  deleteSupplementIntake(userId: string, id: string): Promise<boolean>;
+
+  listPeriods(userId: string): Promise<PeriodRecord[]>;
+  /** Adds periods, skipping any whose start date is already logged. Returns how many were added. */
+  addPeriods(userId: string, entries: { startDate: string; endDate?: string }[]): Promise<number>;
+  deletePeriod(userId: string, id: string): Promise<boolean>;
+
+  listWearableSamples(userId: string, from?: string): Promise<WearableSampleRecord[]>;
+  upsertWearableSamples(userId: string, samples: WearableSampleRecord[]): Promise<number>;
+
+  listMidas(userId: string): Promise<MidasRecord[]>;
+  addMidas(userId: string, date: string, answers: MidasRecord["answers"]): Promise<MidasRecord>;
+
+  getIntegration(userId: string, provider: string): Promise<IntegrationRecord | null>;
+  saveIntegration(userId: string, record: IntegrationRecord): Promise<void>;
+
+  /** Permanently deletes every health record for this user. */
+  deleteAllUserData(userId: string): Promise<void>;
 }
+
+function defaultProfile(): ProfileRecord {
+  const s = emptyState();
+  return { profile: s.profile as ProfileInput, patterns: s.patterns as PatternsInput, timezone: null };
+}
+
+// ---------------------------------------------------------------------------------------
+// In-memory storage: development without a database, and tests.
+
+type Owned<T> = T & { userId: string };
 
 export class MemStorage implements IStorage {
-  private waterLog: Map<string, WaterEntry>;
-  private supplementLog: Map<string, SupplementEntry>;
-  private mealLog: Map<string, MealEntry>;
-  private migraineLog: Map<string, MigraineEntry>;
-  private cycleLog: Map<string, CycleEntry>;
+  private profiles = new Map<string, ProfileRecord>();
+  private medications: Owned<MedicationRecord>[] = [];
+  private supplements: Owned<SupplementRecord>[] = [];
+  private attacks: Owned<AttackRecord>[] = [];
+  private dailyLogs: Owned<DailyLogRecord>[] = [];
+  private water: Owned<WaterRecord>[] = [];
+  private meals: Owned<MealRecord>[] = [];
+  private supplementIntake: Owned<SupplementIntakeRecord>[] = [];
+  private periods: Owned<PeriodRecord>[] = [];
+  private samples: Owned<WearableSampleRecord>[] = [];
+  private midas: Owned<MidasRecord>[] = [];
+  private integrations: Owned<IntegrationRecord>[] = [];
 
-  constructor() {
-    this.waterLog = new Map();
-    this.supplementLog = new Map();
-    this.mealLog = new Map();
-    this.migraineLog = new Map();
-    this.cycleLog = new Map();
-    
-    // Initialize with today's sample data
-    void this.initializeSampleData();
+  private mine<T extends { userId: string }>(rows: T[], userId: string) {
+    return rows.filter((r) => r.userId === userId);
+  }
+  private strip<T extends { userId: string }>(row: T): Omit<T, "userId"> {
+    const { userId: _u, ...rest } = row;
+    return rest;
+  }
+  private remove<T extends { userId: string; id: string }>(rows: T[], userId: string, id: string): boolean {
+    const i = rows.findIndex((r) => r.userId === userId && r.id === id);
+    if (i < 0) return false;
+    rows.splice(i, 1);
+    return true;
+  }
+  private replace<T extends { userId: string; id: string }>(rows: T[], userId: string, id: string, next: T): T | null {
+    const i = rows.findIndex((r) => r.userId === userId && r.id === id);
+    if (i < 0) return null;
+    rows[i] = next;
+    return next;
   }
 
-  private async initializeSampleData() {
-    // Sample water entries
-    const water1 = await this.addWaterLog(500);
-    water1.timestamp = new Date(new Date().setHours(8, 30));
-    
-    const water2 = await this.addWaterLog(250);
-    water2.timestamp = new Date(new Date().setHours(11, 15));
-    
-    const water3 = await this.addWaterLog(450);
-    water3.timestamp = new Date(new Date().setHours(14, 45));
-    
-    // Sample supplement entries
-    await this.addSupplementLog('CoQ10', '300mg');
-    await this.addSupplementLog('Magnesium Citrate', '400mg');
-    
-    // Sample meal entries
-    const meal1 = await this.addMealLog('Breakfast');
-    meal1.timestamp = new Date(new Date().setHours(7, 30));
-    
-    const meal2 = await this.addMealLog('Lunch');
-    meal2.timestamp = new Date(new Date().setHours(12, 45));
-    
-    // Sample cycle entry
-    await this.addCycleLog('2024-01-15', '2024-01-20');
+  async getProfile(userId: string) {
+    return this.profiles.get(userId) ?? defaultProfile();
+  }
+  async saveProfile(userId: string, update: Partial<ProfileRecord>) {
+    const next = { ...(await this.getProfile(userId)), ...update };
+    this.profiles.set(userId, next);
+    return next;
   }
 
-  async getWaterLog(date?: string): Promise<WaterEntry[]> {
-    let entries = Array.from(this.waterLog.values()).sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-    if (date) {
-      const targetDate = new Date(date + 'T00:00:00');
-      const targetDateStr = targetDate.toDateString();
-      entries = entries.filter(e => {
-        return new Date(e.timestamp).toDateString() === targetDateStr;
-      });
+  async listMedications(userId: string) {
+    return this.mine(this.medications, userId).map((r) => this.strip(r));
+  }
+  async createMedication(userId: string, input: MedicationInput) {
+    const row = { ...input, id: randomUUID(), userId };
+    this.medications.push(row);
+    return this.strip(row);
+  }
+  async updateMedication(userId: string, id: string, input: MedicationInput) {
+    const row = this.replace(this.medications, userId, id, { ...input, id, userId });
+    return row && this.strip(row);
+  }
+  async deleteMedication(userId: string, id: string) {
+    return this.remove(this.medications, userId, id);
+  }
+
+  async listSupplements(userId: string) {
+    return this.mine(this.supplements, userId).map((r) => this.strip(r));
+  }
+  async createSupplement(userId: string, input: SupplementInput) {
+    const row = { ...input, id: randomUUID(), userId };
+    this.supplements.push(row);
+    return this.strip(row);
+  }
+  async updateSupplement(userId: string, id: string, input: SupplementInput) {
+    const row = this.replace(this.supplements, userId, id, { ...input, id, userId });
+    return row && this.strip(row);
+  }
+  async deleteSupplement(userId: string, id: string) {
+    return this.remove(this.supplements, userId, id);
+  }
+
+  async listAttacks(userId: string) {
+    return this.mine(this.attacks, userId)
+      .map((r) => this.strip(r))
+      .sort((a, b) => b.start.localeCompare(a.start));
+  }
+  async createAttack(userId: string, input: AttackInput) {
+    const row = { ...input, id: randomUUID(), userId };
+    this.attacks.push(row);
+    return this.strip(row);
+  }
+  async updateAttack(userId: string, id: string, input: AttackInput) {
+    const row = this.replace(this.attacks, userId, id, { ...input, id, userId });
+    return row && this.strip(row);
+  }
+  async deleteAttack(userId: string, id: string) {
+    return this.remove(this.attacks, userId, id);
+  }
+
+  async listDailyLogs(userId: string, from?: string, to?: string) {
+    return this.mine(this.dailyLogs, userId)
+      .filter((l) => (!from || l.date >= from) && (!to || l.date <= to))
+      .map((r) => this.strip(r))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
+  async upsertDailyLog(userId: string, date: string, input: DailyLogInput) {
+    const row = { ...input, date, userId };
+    const i = this.dailyLogs.findIndex((l) => l.userId === userId && l.date === date);
+    if (i >= 0) this.dailyLogs[i] = row;
+    else this.dailyLogs.push(row);
+    return this.strip(row);
+  }
+
+  async listWater(userId: string, localDate?: string) {
+    return this.mine(this.water, userId)
+      .filter((w) => !localDate || w.localDate === localDate)
+      .map((r) => this.strip(r));
+  }
+  async addWater(userId: string, amount: number, localDate: string) {
+    const row = { id: randomUUID(), userId, timestamp: new Date(), localDate, amount };
+    this.water.push(row);
+    return this.strip(row);
+  }
+  async deleteWater(userId: string, id: string) {
+    return this.remove(this.water, userId, id);
+  }
+
+  async listMeals(userId: string, localDate?: string) {
+    return this.mine(this.meals, userId)
+      .filter((m) => !localDate || m.localDate === localDate)
+      .map((r) => this.strip(r));
+  }
+  async addMeal(userId: string, type: string, localDate: string, localTime: string) {
+    const row = { id: randomUUID(), userId, timestamp: new Date(), localDate, localTime, type };
+    this.meals.push(row);
+    return this.strip(row);
+  }
+  async deleteMeal(userId: string, id: string) {
+    return this.remove(this.meals, userId, id);
+  }
+
+  async listSupplementIntake(userId: string, localDate?: string) {
+    return this.mine(this.supplementIntake, userId)
+      .filter((m) => !localDate || m.localDate === localDate)
+      .map((r) => this.strip(r));
+  }
+  async addSupplementIntake(userId: string, name: string, dosage: string, localDate: string) {
+    const row = { id: randomUUID(), userId, timestamp: new Date(), localDate, name, dosage };
+    this.supplementIntake.push(row);
+    return this.strip(row);
+  }
+  async deleteSupplementIntake(userId: string, id: string) {
+    return this.remove(this.supplementIntake, userId, id);
+  }
+
+  async listPeriods(userId: string) {
+    return this.mine(this.periods, userId)
+      .map((r) => this.strip(r))
+      .sort((a, b) => a.startDate.localeCompare(b.startDate));
+  }
+  async addPeriods(userId: string, entries: { startDate: string; endDate?: string }[]) {
+    const existing = new Set(this.mine(this.periods, userId).map((p) => p.startDate));
+    let added = 0;
+    for (const e of entries) {
+      if (existing.has(e.startDate)) continue;
+      existing.add(e.startDate);
+      this.periods.push({ id: randomUUID(), userId, startDate: e.startDate, endDate: e.endDate ?? null });
+      added++;
     }
-    return entries;
+    return added;
+  }
+  async deletePeriod(userId: string, id: string) {
+    return this.remove(this.periods, userId, id);
   }
 
-  async addWaterLog(amount: number, date?: string): Promise<WaterEntry> {
-    const id = randomUUID();
-    const timestamp = date ? new Date(date + 'T12:00:00') : new Date();
-    const entry: WaterEntry = {
-      id,
-      timestamp,
-      amount
-    };
-    this.waterLog.set(id, entry);
-    return entry;
+  async listWearableSamples(userId: string, from?: string) {
+    return this.mine(this.samples, userId)
+      .filter((s) => !from || s.date >= from)
+      .map((r) => this.strip(r));
   }
-
-  async getSupplementLog(date?: string): Promise<SupplementEntry[]> {
-    let entries = Array.from(this.supplementLog.values()).sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-    if (date) {
-      const targetDate = new Date(date + 'T00:00:00');
-      const targetDateStr = targetDate.toDateString();
-      entries = entries.filter(e => {
-        return new Date(e.timestamp).toDateString() === targetDateStr;
-      });
+  async upsertWearableSamples(userId: string, samples: WearableSampleRecord[]) {
+    for (const s of samples) {
+      const i = this.samples.findIndex((x) => x.userId === userId && x.date === s.date && x.metric === s.metric && x.source === s.source);
+      if (i >= 0) this.samples[i] = { ...s, userId };
+      else this.samples.push({ ...s, userId });
     }
-    return entries;
+    return samples.length;
   }
 
-  async addSupplementLog(name: string, dosage: string, date?: string): Promise<SupplementEntry> {
-    const id = randomUUID();
-    const timestamp = date ? new Date(date + 'T12:00:00') : new Date();
-    const entry: SupplementEntry = {
-      id,
-      timestamp,
-      name,
-      dosage
-    };
-    this.supplementLog.set(id, entry);
-    return entry;
+  async listMidas(userId: string) {
+    return this.mine(this.midas, userId).map((r) => this.strip(r));
+  }
+  async addMidas(userId: string, date: string, answers: MidasRecord["answers"]) {
+    const row = { id: randomUUID(), userId, date, answers };
+    this.midas.push(row);
+    return this.strip(row);
   }
 
-  async getMealLog(): Promise<MealEntry[]> {
-    return Array.from(this.mealLog.values()).sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+  async getIntegration(userId: string, provider: string) {
+    const row = this.integrations.find((i) => i.userId === userId && i.provider === provider);
+    return row ? this.strip(row) : null;
+  }
+  async saveIntegration(userId: string, record: IntegrationRecord) {
+    this.integrations = this.integrations.filter((i) => !(i.userId === userId && i.provider === record.provider));
+    this.integrations.push({ ...record, userId });
   }
 
-  async addMealLog(type: string): Promise<MealEntry> {
-    const id = randomUUID();
-    const entry: MealEntry = {
-      id,
-      timestamp: new Date(),
-      type
-    };
-    this.mealLog.set(id, entry);
-    return entry;
-  }
-
-  async getMigraineLog(): Promise<MigraineEntry[]> {
-    return Array.from(this.migraineLog.values()).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-  }
-
-  async addMigraineLog(severity: number, duration: number, symptoms: string[], triggers: string, notes: string = '', medications?: string): Promise<MigraineEntry> {
-    const id = randomUUID();
-    const entry: MigraineEntry = {
-      id,
-      timestamp: new Date(),
-      severity,
-      duration,
-      symptoms,
-      triggers,
-      notes,
-      medications
-    };
-    this.migraineLog.set(id, entry);
-    return entry;
-  }
-
-  async getCycleLog(): Promise<CycleEntry[]> {
-    return Array.from(this.cycleLog.values()).sort((a, b) => 
-      new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
-    );
-  }
-
-  async addCycleLog(startDate: string, endDate?: string): Promise<CycleEntry> {
-    const id = randomUUID();
-    const entry: CycleEntry = {
-      id,
-      startDate,
-      endDate,
-      cycleLength: endDate ? this.calculateCycleLength(startDate, endDate) : undefined
-    };
-    this.cycleLog.set(id, entry);
-    return entry;
-  }
-
-  private calculateCycleLength(startDate: string, endDate: string): number {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-  }
-
-  async getUserProfile(): Promise<UserProfileEntry | null> {
-    // MemStorage doesn't persist user profile
-    return null;
-  }
-
-  async updateUserProfile(age?: number, sex?: string, contraceptiveUse?: string): Promise<UserProfileEntry> {
-    // MemStorage stub implementation
-    return {
-      id: randomUUID(),
-      userId: 'default_user',
-      age,
-      sex,
-      contraceptiveUse
-    };
-  }
-
-  async getLifestyleLog(): Promise<LifestyleEntry[]> {
-    // MemStorage doesn't persist lifestyle log
-    return [];
-  }
-
-  async addLifestyleLog(caffeineIntake?: number, alcoholIntake?: number, perceivedStress?: number): Promise<LifestyleEntry> {
-    // MemStorage stub implementation
-    return {
-      id: randomUUID(),
-      timestamp: new Date(),
-      caffeineIntake,
-      alcoholIntake,
-      perceivedStress
-    };
-  }
-
-  private healthMetricsStore: Map<string, HealthMetricsEntry> = new Map();
-
-  async getHealthMetrics(date: string): Promise<HealthMetricsEntry | null> {
-    return this.healthMetricsStore.get(date) || null;
-  }
-
-  async upsertHealthMetrics(date: string, readiness: number, sleep: number, stress: number): Promise<HealthMetricsEntry> {
-    const existing = this.healthMetricsStore.get(date);
-    const entry: HealthMetricsEntry = {
-      id: existing?.id || randomUUID(),
-      date,
-      readiness,
-      sleep,
-      stress
-    };
-    this.healthMetricsStore.set(date, entry);
-    return entry;
-  }
-
-  async getHealthMetricsTrend(days: number): Promise<HealthMetricsEntry[]> {
-    const entries = Array.from(this.healthMetricsStore.values());
-    return entries.sort((a, b) => a.date.localeCompare(b.date)).slice(-days);
+  async deleteAllUserData(userId: string) {
+    this.profiles.delete(userId);
+    const keep = <T extends { userId: string }>(rows: T[]) => rows.filter((r) => r.userId !== userId);
+    this.medications = keep(this.medications);
+    this.supplements = keep(this.supplements);
+    this.attacks = keep(this.attacks);
+    this.dailyLogs = keep(this.dailyLogs);
+    this.water = keep(this.water);
+    this.meals = keep(this.meals);
+    this.supplementIntake = keep(this.supplementIntake);
+    this.periods = keep(this.periods);
+    this.samples = keep(this.samples);
+    this.midas = keep(this.midas);
+    this.integrations = keep(this.integrations);
   }
 }
 
-// Database storage implementation
-import { db } from "./db";
-import * as schema from "@shared/schema";
-import { desc, asc, eq, and, gte, lt, sql } from "drizzle-orm";
-import type { WaterLog, SupplementLog, MealLog, MigraineLog, CycleLog } from "@shared/schema";
+// ---------------------------------------------------------------------------------------
+// Postgres storage (production).
+
+type Db = typeof import("./db").db;
+
+/** Drizzle returns null for empty columns; the API uses undefined. */
+function compact<T extends Record<string, unknown>>(row: T): { [K in keyof T]: Exclude<T[K], null> } {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(row)) if (v !== null) out[k] = v;
+  return out as { [K in keyof T]: Exclude<T[K], null> };
+}
 
 export class DbStorage implements IStorage {
-  async getWaterLog(date?: string): Promise<WaterEntry[]> {
-    let query = db.select().from(schema.waterLog);
-    
-    if (date) {
-      // Create clean start/end dates without mutating
-      const startOfDay = new Date(date + 'T00:00:00');
-      const endOfDay = new Date(date + 'T23:59:59.999');
-      query = query.where(
-        and(
-          gte(schema.waterLog.timestamp, startOfDay),
-          lt(schema.waterLog.timestamp, new Date(endOfDay.getTime() + 1))
-        )
-      ) as any;
-    }
-    
-    const entries = await query.orderBy(asc(schema.waterLog.timestamp));
-    return entries.map((e: WaterLog) => ({
-      id: e.id,
-      timestamp: new Date(e.timestamp),
-      amount: e.amount
-    }));
-  }
+  constructor(private db: Db) {}
 
-  async addWaterLog(amount: number, date?: string): Promise<WaterEntry> {
-    const timestamp = date ? new Date(date + 'T12:00:00') : new Date();
-    const [entry] = await db.insert(schema.waterLog).values({ amount, timestamp }).returning();
+  async getProfile(userId: string) {
+    const [row] = await this.db.select().from(schema.profiles).where(eq(schema.profiles.userId, userId));
+    if (!row) return defaultProfile();
+    const base = defaultProfile();
     return {
-      id: entry.id,
-      timestamp: new Date(entry.timestamp),
-      amount: entry.amount
+      profile: { ...base.profile, ...(row.profile as ProfileInput) },
+      patterns: { ...base.patterns, ...(row.patterns as PatternsInput) },
+      timezone: row.timezone,
     };
   }
-
-  async getSupplementLog(date?: string): Promise<SupplementEntry[]> {
-    let query = db.select().from(schema.supplementLog);
-    
-    if (date) {
-      // Create clean start/end dates without mutating
-      const startOfDay = new Date(date + 'T00:00:00');
-      const endOfDay = new Date(date + 'T23:59:59.999');
-      query = query.where(
-        and(
-          gte(schema.supplementLog.timestamp, startOfDay),
-          lt(schema.supplementLog.timestamp, new Date(endOfDay.getTime() + 1))
-        )
-      ) as any;
-    }
-    
-    const entries = await query.orderBy(asc(schema.supplementLog.timestamp));
-    return entries.map((e: SupplementLog) => ({
-      id: e.id,
-      timestamp: new Date(e.timestamp),
-      name: e.name,
-      dosage: e.dosage
-    }));
+  async saveProfile(userId: string, update: Partial<ProfileRecord>) {
+    const next = { ...(await this.getProfile(userId)), ...update };
+    await this.db
+      .insert(schema.profiles)
+      .values({ userId, profile: next.profile, patterns: next.patterns, timezone: next.timezone })
+      .onConflictDoUpdate({
+        target: schema.profiles.userId,
+        set: { profile: next.profile, patterns: next.patterns, timezone: next.timezone, updatedAt: new Date() },
+      });
+    return next;
   }
 
-  async addSupplementLog(name: string, dosage: string, date?: string): Promise<SupplementEntry> {
-    const timestamp = date ? new Date(date + 'T12:00:00') : new Date();
-    const [entry] = await db.insert(schema.supplementLog).values({ name, dosage, timestamp }).returning();
-    return {
-      id: entry.id,
-      timestamp: new Date(entry.timestamp),
-      name: entry.name,
-      dosage: entry.dosage
-    };
+  private medicationRow(r: typeof schema.medications.$inferSelect): MedicationRecord {
+    const { userId: _u, createdAt: _c, ...rest } = compact(r);
+    return rest as MedicationRecord;
   }
-
-  async getMealLog(): Promise<MealEntry[]> {
-    const entries = await db.select().from(schema.mealLog).orderBy(asc(schema.mealLog.timestamp));
-    return entries.map((e: MealLog) => ({
-      id: e.id,
-      timestamp: new Date(e.timestamp),
-      type: e.type
-    }));
+  async listMedications(userId: string) {
+    const rows = await this.db.select().from(schema.medications).where(eq(schema.medications.userId, userId)).orderBy(asc(schema.medications.createdAt));
+    return rows.map((r) => this.medicationRow(r));
   }
-
-  async addMealLog(type: string): Promise<MealEntry> {
-    const [entry] = await db.insert(schema.mealLog).values({ type }).returning();
-    return {
-      id: entry.id,
-      timestamp: new Date(entry.timestamp),
-      type: entry.type
-    };
+  async createMedication(userId: string, input: MedicationInput) {
+    const [row] = await this.db.insert(schema.medications).values({ ...input, userId }).returning();
+    return this.medicationRow(row);
   }
-
-  async getMigraineLog(): Promise<MigraineEntry[]> {
-    const entries = await db.select().from(schema.migraineLog).orderBy(desc(schema.migraineLog.timestamp));
-    return entries.map((e: MigraineLog) => ({
-      id: e.id,
-      timestamp: new Date(e.timestamp),
-      severity: e.severity,
-      duration: e.duration,
-      symptoms: e.symptoms,
-      triggers: e.triggers || '',
-      notes: e.notes || '',
-      medications: e.medications || undefined
-    }));
-  }
-
-  async addMigraineLog(severity: number, duration: number, symptoms: string[], triggers: string, notes: string = '', medications?: string): Promise<MigraineEntry> {
-    const [entry] = await db.insert(schema.migraineLog).values({ 
-      severity, 
-      duration, 
-      symptoms, 
-      triggers,
-      notes,
-      medications
-    }).returning();
-    return {
-      id: entry.id,
-      timestamp: new Date(entry.timestamp),
-      severity: entry.severity,
-      duration: entry.duration,
-      symptoms: entry.symptoms,
-      triggers: entry.triggers || '',
-      notes: entry.notes || '',
-      medications: entry.medications || undefined
-    };
-  }
-
-  async getCycleLog(): Promise<CycleEntry[]> {
-    const entries = await db.select().from(schema.cycleLog).orderBy(desc(schema.cycleLog.startDate));
-    return entries.map((e: CycleLog) => ({
-      id: e.id,
-      startDate: e.startDate,
-      endDate: e.endDate || undefined,
-      cycleLength: e.cycleLength || undefined
-    }));
-  }
-
-  async addCycleLog(startDate: string, endDate?: string): Promise<CycleEntry> {
-    const cycleLength = endDate ? this.calculateCycleLength(startDate, endDate) : undefined;
-    const [entry] = await db.insert(schema.cycleLog).values({ 
-      startDate, 
-      endDate,
-      cycleLength 
-    }).returning();
-    return {
-      id: entry.id,
-      startDate: entry.startDate,
-      endDate: entry.endDate || undefined,
-      cycleLength: entry.cycleLength || undefined
-    };
-  }
-
-  private calculateCycleLength(startDate: string, endDate: string): number {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-  }
-
-  async getUserProfile(): Promise<UserProfileEntry | null> {
-    const [profile] = await db.select().from(schema.userProfile).limit(1);
-    if (!profile) return null;
-    return {
-      id: profile.id,
-      userId: profile.userId,
-      age: profile.age || undefined,
-      sex: profile.sex || undefined,
-      contraceptiveUse: profile.contraceptiveUse || undefined
-    };
-  }
-
-  async updateUserProfile(age?: number, sex?: string, contraceptiveUse?: string): Promise<UserProfileEntry> {
-    // Check if profile exists
-    const existing = await this.getUserProfile();
-    
-    if (existing) {
-      // Update existing profile
-      const [updated] = await db.update(schema.userProfile)
-        .set({ age, sex, contraceptiveUse })
-        .where(eq(schema.userProfile.userId, 'default_user'))
-        .returning();
-      return {
-        id: updated.id,
-        userId: updated.userId,
-        age: updated.age || undefined,
-        sex: updated.sex || undefined,
-        contraceptiveUse: updated.contraceptiveUse || undefined
-      };
-    } else {
-      // Create new profile
-      const [created] = await db.insert(schema.userProfile)
-        .values({ age, sex, contraceptiveUse })
-        .returning();
-      return {
-        id: created.id,
-        userId: created.userId,
-        age: created.age || undefined,
-        sex: created.sex || undefined,
-        contraceptiveUse: created.contraceptiveUse || undefined
-      };
-    }
-  }
-
-  async getLifestyleLog(): Promise<LifestyleEntry[]> {
-    const entries = await db.select().from(schema.lifestyleLog).orderBy(desc(schema.lifestyleLog.timestamp));
-    return entries.map(e => ({
-      id: e.id,
-      timestamp: new Date(e.timestamp),
-      caffeineIntake: e.caffeineIntake || undefined,
-      alcoholIntake: e.alcoholIntake || undefined,
-      perceivedStress: e.perceivedStress || undefined
-    }));
-  }
-
-  async addLifestyleLog(caffeineIntake?: number, alcoholIntake?: number, perceivedStress?: number): Promise<LifestyleEntry> {
-    const [entry] = await db.insert(schema.lifestyleLog)
-      .values({ caffeineIntake, alcoholIntake, perceivedStress })
+  async updateMedication(userId: string, id: string, input: MedicationInput) {
+    const [row] = await this.db
+      .update(schema.medications)
+      .set({ dose: null, frequency: null, schedule: null, reason: null, prescriber: null, startDate: null, endDate: null, ...input })
+      .where(and(eq(schema.medications.userId, userId), eq(schema.medications.id, id)))
       .returning();
-    return {
-      id: entry.id,
-      timestamp: new Date(entry.timestamp),
-      caffeineIntake: entry.caffeineIntake || undefined,
-      alcoholIntake: entry.alcoholIntake || undefined,
-      perceivedStress: entry.perceivedStress || undefined
-    };
+    return row ? this.medicationRow(row) : null;
+  }
+  async deleteMedication(userId: string, id: string) {
+    const rows = await this.db.delete(schema.medications).where(and(eq(schema.medications.userId, userId), eq(schema.medications.id, id))).returning();
+    return rows.length > 0;
   }
 
-  async getHealthMetrics(date: string): Promise<HealthMetricsEntry | null> {
-    const [entry] = await db.select().from(schema.healthMetrics).where(eq(schema.healthMetrics.date, date)).limit(1);
-    if (!entry) return null;
-    return {
-      id: entry.id,
-      date: entry.date,
-      readiness: entry.readiness,
-      sleep: entry.sleep,
-      stress: entry.stress
-    };
+  private supplementRow(r: typeof schema.supplements.$inferSelect): SupplementRecord {
+    const { userId: _u, ...rest } = compact(r);
+    return rest as SupplementRecord;
+  }
+  async listSupplements(userId: string) {
+    const rows = await this.db.select().from(schema.supplements).where(eq(schema.supplements.userId, userId));
+    return rows.map((r) => this.supplementRow(r));
+  }
+  async createSupplement(userId: string, input: SupplementInput) {
+    const [row] = await this.db.insert(schema.supplements).values({ ...input, userId }).returning();
+    return this.supplementRow(row);
+  }
+  async updateSupplement(userId: string, id: string, input: SupplementInput) {
+    const [row] = await this.db
+      .update(schema.supplements)
+      .set({ dailyMg: null, startDate: null, ...input })
+      .where(and(eq(schema.supplements.userId, userId), eq(schema.supplements.id, id)))
+      .returning();
+    return row ? this.supplementRow(row) : null;
+  }
+  async deleteSupplement(userId: string, id: string) {
+    const rows = await this.db.delete(schema.supplements).where(and(eq(schema.supplements.userId, userId), eq(schema.supplements.id, id))).returning();
+    return rows.length > 0;
   }
 
-  async upsertHealthMetrics(date: string, readiness: number, sleep: number, stress: number): Promise<HealthMetricsEntry> {
-    const existing = await this.getHealthMetrics(date);
-    
-    if (existing) {
-      const [updated] = await db.update(schema.healthMetrics)
-        .set({ readiness, sleep, stress })
-        .where(eq(schema.healthMetrics.date, date))
-        .returning();
-      return {
-        id: updated.id,
-        date: updated.date,
-        readiness: updated.readiness,
-        sleep: updated.sleep,
-        stress: updated.stress
-      };
-    } else {
-      const [created] = await db.insert(schema.healthMetrics)
-        .values({ date, readiness, sleep, stress })
-        .returning();
-      return {
-        id: created.id,
-        date: created.date,
-        readiness: created.readiness,
-        sleep: created.sleep,
-        stress: created.stress
-      };
+  private attackRow(r: typeof schema.attacks.$inferSelect): AttackRecord {
+    return { ...(r.details as AttackInput), id: r.id, start: r.start, end: r.end ?? undefined, peakSeverity: r.peakSeverity };
+  }
+  private attackValues(input: AttackInput) {
+    const { start, end, peakSeverity, ...details } = input;
+    return { start, end: end ?? null, peakSeverity, details };
+  }
+  async listAttacks(userId: string) {
+    const rows = await this.db.select().from(schema.attacks).where(eq(schema.attacks.userId, userId)).orderBy(desc(schema.attacks.start));
+    return rows.map((r) => this.attackRow(r));
+  }
+  async createAttack(userId: string, input: AttackInput) {
+    const [row] = await this.db.insert(schema.attacks).values({ ...this.attackValues(input), userId }).returning();
+    return this.attackRow(row);
+  }
+  async updateAttack(userId: string, id: string, input: AttackInput) {
+    const [row] = await this.db
+      .update(schema.attacks)
+      .set(this.attackValues(input))
+      .where(and(eq(schema.attacks.userId, userId), eq(schema.attacks.id, id)))
+      .returning();
+    return row ? this.attackRow(row) : null;
+  }
+  async deleteAttack(userId: string, id: string) {
+    const rows = await this.db.delete(schema.attacks).where(and(eq(schema.attacks.userId, userId), eq(schema.attacks.id, id))).returning();
+    return rows.length > 0;
+  }
+
+  async listDailyLogs(userId: string, from?: string, to?: string) {
+    const conds = [eq(schema.dailyLogs.userId, userId)];
+    if (from) conds.push(gte(schema.dailyLogs.date, from));
+    if (to) conds.push(lte(schema.dailyLogs.date, to));
+    const rows = await this.db.select().from(schema.dailyLogs).where(and(...conds)).orderBy(asc(schema.dailyLogs.date));
+    return rows.map((r) => ({ ...(r.data as DailyLogInput), date: r.date }));
+  }
+  async upsertDailyLog(userId: string, date: string, input: DailyLogInput) {
+    await this.db
+      .insert(schema.dailyLogs)
+      .values({ userId, date, data: input })
+      .onConflictDoUpdate({ target: [schema.dailyLogs.userId, schema.dailyLogs.date], set: { data: input, updatedAt: new Date() } });
+    return { ...input, date };
+  }
+
+  async listWater(userId: string, localDate?: string) {
+    const conds = [eq(schema.waterLog.userId, userId)];
+    if (localDate) conds.push(eq(schema.waterLog.localDate, localDate));
+    return this.db
+      .select({ id: schema.waterLog.id, timestamp: schema.waterLog.timestamp, localDate: schema.waterLog.localDate, amount: schema.waterLog.amount })
+      .from(schema.waterLog)
+      .where(and(...conds))
+      .orderBy(asc(schema.waterLog.timestamp));
+  }
+  async addWater(userId: string, amount: number, localDate: string) {
+    const [row] = await this.db.insert(schema.waterLog).values({ userId, amount, localDate }).returning();
+    return { id: row.id, timestamp: row.timestamp, localDate: row.localDate, amount: row.amount };
+  }
+  async deleteWater(userId: string, id: string) {
+    const rows = await this.db.delete(schema.waterLog).where(and(eq(schema.waterLog.userId, userId), eq(schema.waterLog.id, id))).returning();
+    return rows.length > 0;
+  }
+
+  async listMeals(userId: string, localDate?: string) {
+    const conds = [eq(schema.mealLog.userId, userId)];
+    if (localDate) conds.push(eq(schema.mealLog.localDate, localDate));
+    return this.db
+      .select({ id: schema.mealLog.id, timestamp: schema.mealLog.timestamp, localDate: schema.mealLog.localDate, localTime: schema.mealLog.localTime, type: schema.mealLog.type })
+      .from(schema.mealLog)
+      .where(and(...conds))
+      .orderBy(asc(schema.mealLog.timestamp));
+  }
+  async addMeal(userId: string, type: string, localDate: string, localTime: string) {
+    const [row] = await this.db.insert(schema.mealLog).values({ userId, type, localDate, localTime }).returning();
+    return { id: row.id, timestamp: row.timestamp, localDate: row.localDate, localTime: row.localTime, type: row.type };
+  }
+  async deleteMeal(userId: string, id: string) {
+    const rows = await this.db.delete(schema.mealLog).where(and(eq(schema.mealLog.userId, userId), eq(schema.mealLog.id, id))).returning();
+    return rows.length > 0;
+  }
+
+  async listSupplementIntake(userId: string, localDate?: string) {
+    const conds = [eq(schema.supplementLog.userId, userId)];
+    if (localDate) conds.push(eq(schema.supplementLog.localDate, localDate));
+    return this.db
+      .select({ id: schema.supplementLog.id, timestamp: schema.supplementLog.timestamp, localDate: schema.supplementLog.localDate, name: schema.supplementLog.name, dosage: schema.supplementLog.dosage })
+      .from(schema.supplementLog)
+      .where(and(...conds))
+      .orderBy(asc(schema.supplementLog.timestamp));
+  }
+  async addSupplementIntake(userId: string, name: string, dosage: string, localDate: string) {
+    const [row] = await this.db.insert(schema.supplementLog).values({ userId, name, dosage, localDate }).returning();
+    return { id: row.id, timestamp: row.timestamp, localDate: row.localDate, name: row.name, dosage: row.dosage };
+  }
+  async deleteSupplementIntake(userId: string, id: string) {
+    const rows = await this.db.delete(schema.supplementLog).where(and(eq(schema.supplementLog.userId, userId), eq(schema.supplementLog.id, id))).returning();
+    return rows.length > 0;
+  }
+
+  async listPeriods(userId: string) {
+    return this.db
+      .select({ id: schema.cycleLog.id, startDate: schema.cycleLog.startDate, endDate: schema.cycleLog.endDate })
+      .from(schema.cycleLog)
+      .where(eq(schema.cycleLog.userId, userId))
+      .orderBy(asc(schema.cycleLog.startDate));
+  }
+  async addPeriods(userId: string, entries: { startDate: string; endDate?: string }[]) {
+    const existing = new Set((await this.listPeriods(userId)).map((p) => p.startDate));
+    const fresh = entries.filter((e, i) => !existing.has(e.startDate) && entries.findIndex((x) => x.startDate === e.startDate) === i);
+    if (!fresh.length) return 0;
+    await this.db.insert(schema.cycleLog).values(fresh.map((e) => ({ userId, startDate: e.startDate, endDate: e.endDate ?? null })));
+    return fresh.length;
+  }
+  async deletePeriod(userId: string, id: string) {
+    const rows = await this.db.delete(schema.cycleLog).where(and(eq(schema.cycleLog.userId, userId), eq(schema.cycleLog.id, id))).returning();
+    return rows.length > 0;
+  }
+
+  async listWearableSamples(userId: string, from?: string) {
+    const conds = [eq(schema.wearableSamples.userId, userId)];
+    if (from) conds.push(gte(schema.wearableSamples.date, from));
+    return this.db
+      .select({ date: schema.wearableSamples.date, metric: schema.wearableSamples.metric, value: schema.wearableSamples.value, source: schema.wearableSamples.source })
+      .from(schema.wearableSamples)
+      .where(and(...conds))
+      .orderBy(asc(schema.wearableSamples.date));
+  }
+  async upsertWearableSamples(userId: string, samples: WearableSampleRecord[]) {
+    for (let i = 0; i < samples.length; i += 500) {
+      const chunk = samples.slice(i, i + 500).map((s) => ({ ...s, userId }));
+      await this.db
+        .insert(schema.wearableSamples)
+        .values(chunk)
+        .onConflictDoUpdate({
+          target: [schema.wearableSamples.userId, schema.wearableSamples.date, schema.wearableSamples.metric, schema.wearableSamples.source],
+          set: { value: schema.wearableSamples.value },
+        });
     }
+    return samples.length;
   }
 
-  async getHealthMetricsTrend(days: number): Promise<HealthMetricsEntry[]> {
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
-    const startDateStr = startDate.toISOString().split('T')[0];
+  async listMidas(userId: string) {
+    const rows = await this.db.select().from(schema.midasAssessments).where(eq(schema.midasAssessments.userId, userId));
+    return rows.map((r) => ({ id: r.id, date: r.date, answers: r.answers as MidasRecord["answers"] }));
+  }
+  async addMidas(userId: string, date: string, answers: MidasRecord["answers"]) {
+    const [row] = await this.db.insert(schema.midasAssessments).values({ userId, date, answers }).returning();
+    return { id: row.id, date: row.date, answers: row.answers as MidasRecord["answers"] };
+  }
 
-    const entries = await db.select().from(schema.healthMetrics)
-      .where(gte(schema.healthMetrics.date, startDateStr))
-      .orderBy(asc(schema.healthMetrics.date));
+  async getIntegration(userId: string, provider: string) {
+    const [row] = await this.db
+      .select()
+      .from(schema.integrations)
+      .where(and(eq(schema.integrations.userId, userId), eq(schema.integrations.provider, provider)));
+    return row ? { provider: row.provider, externalUserId: row.externalUserId, lastSyncedAt: row.lastSyncedAt } : null;
+  }
+  async saveIntegration(userId: string, record: IntegrationRecord) {
+    await this.db
+      .insert(schema.integrations)
+      .values({ userId, ...record })
+      .onConflictDoUpdate({
+        target: [schema.integrations.userId, schema.integrations.provider],
+        set: { externalUserId: record.externalUserId, lastSyncedAt: record.lastSyncedAt },
+      });
+  }
 
-    return entries.map(e => ({
-      id: e.id,
-      date: e.date,
-      readiness: e.readiness,
-      sleep: e.sleep,
-      stress: e.stress
-    }));
+  async deleteAllUserData(userId: string) {
+    const tables = [
+      schema.medications, schema.supplements, schema.attacks, schema.dailyLogs, schema.waterLog, schema.mealLog,
+      schema.supplementLog, schema.cycleLog, schema.wearableSamples, schema.midasAssessments,
+    ] as const;
+    for (const t of tables) await this.db.delete(t).where(eq(t.userId, userId));
+    await this.db.delete(schema.profiles).where(eq(schema.profiles.userId, userId));
+    await this.db.delete(schema.integrations).where(eq(schema.integrations.userId, userId));
   }
 }
 
-export const storage = new DbStorage();
+export async function createStorage(): Promise<IStorage> {
+  if (!process.env.DATABASE_URL) {
+    if (process.env.NODE_ENV === "production") throw new Error("DATABASE_URL must be set in production");
+    console.warn("[aura] DATABASE_URL not set: using in-memory storage (data is lost on restart)");
+    return new MemStorage();
+  }
+  const { db } = await import("./db");
+  return new DbStorage(db);
+}

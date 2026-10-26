@@ -87,6 +87,20 @@ export const redFlagRule: Rule = (ctx) => {
     }
   }
 
+  const unusualAura = recentAttacks(ctx, 30).find((a) => hasAura(a) && (a.auraOnset === 'sudden' || a.auraUsual === false));
+  if (unusualAura) {
+    out.push({
+      id: 'aura-unusual',
+      severity: 'info',
+      category: 'safety',
+      title: 'An aura that was different from usual',
+      detail: `On ${toISODate(unusualAura.start)} your aura ${
+        unusualAura.auraOnset === 'sudden' ? 'started suddenly rather than building up' : 'was not like your usual aura'
+      }. It's worth mentioning to your doctor soon so they can take a look. If you ever have sudden weakness, numbness, trouble speaking or loss of vision, call emergency services.`,
+      sources: ['ichd-3', 'snnoop10'],
+    });
+  }
+
   const longAura = recentAttacks(ctx, 90).find((a) => (a.auraMinutes ?? 0) > 60);
   if (longAura) {
     out.push({
