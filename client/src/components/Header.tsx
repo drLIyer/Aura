@@ -43,8 +43,8 @@ export default function Header({ userName, currentView, onNavigate, onLogout }: 
               <Brain className="w-6 h-6 text-white" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-lg font-bold leading-tight text-foreground sm:text-2xl">Personalized Migraine Monitor and Predictor</h1>
-              <p className="text-sm text-muted-foreground">Track. Analyze. Prevent.</p>
+              <h1 className="text-xl font-bold leading-tight text-foreground sm:text-2xl">Aura</h1>
+              <p className="text-sm text-muted-foreground">Personalized migraine monitor and predictor</p>
             </div>
           </div>
           <div className="flex items-center gap-3 shrink-0">

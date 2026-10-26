@@ -332,6 +332,20 @@ export interface MenstrualPattern {
 export const DEFAULT_PERIOD_DAYS = 5;
 
 /** Every day of bleeding, from logged periods and from check-ins that ticked "menstruation". */
+/** Ages at which periods are expected: menarche from about 10, menopause by about 55 (median 51). */
+export const MENSTRUATING_AGES = { from: 10, to: 55 } as const;
+
+/**
+ * Whether to show cycle tracking: female and of menstruating age. An unknown birth year counts as
+ * in range, since the patient said they are female and may simply not have filled it in.
+ */
+export function tracksMenstrualCycle(profile: { sex?: string; birthYear?: number } | null | undefined, year: number): boolean {
+  if (profile?.sex !== 'female') return false;
+  if (!profile.birthYear) return true;
+  const age = year - profile.birthYear;
+  return age >= MENSTRUATING_AGES.from && age <= MENSTRUATING_AGES.to;
+}
+
 export function menstruationDays(state: Pick<AppState, 'dailyLogs' | 'periods'>): Set<ISODate> {
   const days = new Set(state.dailyLogs.filter((l) => l.exposures.includes('menstruation')).map((l) => l.date));
   for (const p of state.periods ?? []) {

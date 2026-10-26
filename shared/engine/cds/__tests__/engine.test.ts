@@ -4,7 +4,7 @@ import type { AppState, Attack, Medication } from '../../domain/types';
 import { demoState } from '../../demo';
 import { emptyState } from '../../state';
 import { evaluate } from '../engine';
-import { relativeRisk, analyzeTriggers, menstrualPattern } from '../patterns';
+import { relativeRisk, analyzeTriggers, menstrualPattern, tracksMenstrualCycle } from '../patterns';
 import { overuseStatus } from '../rules';
 import { backtest, fitRiskModel, forecast } from '../riskModel';
 import { GUIDELINES } from '../../domain/guidelines';
@@ -243,5 +243,17 @@ describe('personal thresholds and devices', () => {
     expect(bands[0]).toMatchObject({ label: 'under 50', days: 20 });
     expect(bands[0].attackRate).toBeGreaterThan(bands[3].attackRate);
     expect(suggestThreshold(s, 'sleepScore')?.below).toBeLessThanOrEqual(50);
+  });
+});
+
+describe('cycle tracking eligibility', () => {
+  it('applies to females of menstruating age only', () => {
+    expect(tracksMenstrualCycle({ sex: 'female', birthYear: 1990 }, 2026)).toBe(true);
+    expect(tracksMenstrualCycle({ sex: 'female' }, 2026)).toBe(true);
+    expect(tracksMenstrualCycle({ sex: 'female', birthYear: 1960 }, 2026)).toBe(false);
+    expect(tracksMenstrualCycle({ sex: 'female', birthYear: 2020 }, 2026)).toBe(false);
+    expect(tracksMenstrualCycle({ sex: 'male', birthYear: 1990 }, 2026)).toBe(false);
+    expect(tracksMenstrualCycle({ sex: 'unspecified', birthYear: 1990 }, 2026)).toBe(false);
+    expect(tracksMenstrualCycle(undefined, 2026)).toBe(false);
   });
 });

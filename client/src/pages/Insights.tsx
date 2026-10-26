@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { apiJson, invalidateAll } from "@/lib/queryClient";
 import { deviceById } from "@shared/engine/domain/deviceScoring";
 import type { ProfileRecord } from "@/lib/types";
+import { useCycleTracking } from "@/lib/cycle";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import CycleAnalyticsChart, { type CyclePhaseRow } from "@/components/CycleAnalyticsChart";
@@ -54,6 +55,7 @@ export default function Insights({ date }: { date: string }) {
     queryKey: [`/api/trends?date=${date}&days=30`],
   });
   const { data: profile } = useQuery<ProfileRecord>({ queryKey: ["/api/profile"] });
+  const tracksCycle = useCycleTracking();
   const applyThreshold = useMutation({
     mutationFn: ({ metric, below }: { metric: "sleepScore" | "readinessScore"; below: number }) =>
       apiJson("/api/profile", "PUT", {
@@ -213,8 +215,8 @@ export default function Insights({ date }: { date: string }) {
         </Card>
       </div>
 
-      {data.cycleCorrelation.length > 0 && <CycleAnalyticsChart data={data.cycleCorrelation} />}
-      {data.menstrual?.meetsCriteria && (
+      {tracksCycle && data.cycleCorrelation.length > 0 && <CycleAnalyticsChart data={data.cycleCorrelation} />}
+      {tracksCycle && data.menstrual?.meetsCriteria && (
         <Card className="p-5 bg-pink-500/5 text-sm">
           Attacks started from 2 days before to 3 days after your period began in {data.menstrual.cyclesWithAttack} of {data.menstrual.cycles} cycles — the
           pattern of {data.menstrual.pure ? "pure menstrual" : "menstrually related"} migraine. Worth discussing short-term prevention around your period with

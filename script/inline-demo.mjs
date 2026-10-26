@@ -15,8 +15,8 @@ const js = asset(/<script type="module"[^>]*src="\.?\/?([^"]+\.js)"/).replace(/<
 const fonts = "https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap";
 
 const page = `<meta charset="utf-8">
-<title>Migraine Monitor Demo</title>
-<meta name="description" content="Demo of the Personalized Migraine Monitor and Predictor with a fictional patient.">
+<title>Aura Demo</title>
+<meta name="description" content="Demo of Aura, a personalized migraine monitor and predictor, with a fictional patient.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="${fonts}">

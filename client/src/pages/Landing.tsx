@@ -9,7 +9,8 @@ export default function Landing({ unavailable }: { unavailable?: boolean }) {
         <div className="w-14 h-14 mx-auto bg-gradient-to-br from-primary to-chart-2 rounded-xl flex items-center justify-center">
           <Brain className="w-8 h-8 text-white" />
         </div>
-        <h1 className="text-2xl font-bold">Personalized Migraine Monitor and Predictor</h1>
+        <h1 className="text-3xl font-bold">Aura</h1>
+        <p className="text-sm font-medium text-primary">Personalized migraine monitor and predictor</p>
         <p className="text-muted-foreground">Track your migraines, learn your own triggers, and bring a clear, guideline-based summary to your doctor.</p>
         {unavailable ? (
           <p className="text-sm text-destructive">Sign-in isn't configured on this server yet.</p>

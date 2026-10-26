@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { TRIGGERS, WARNING_SIGNS } from "@shared/engine/domain/catalog";
+import { MENSTRUATION, useCycleTracking } from "@/lib/cycle";
 import type { DailyLogInput } from "@shared/api";
 import type { CheckIn } from "@/lib/types";
 import ChipPicker from "./ChipPicker";
@@ -35,7 +36,11 @@ export default function CheckInDialog({ open, onOpenChange, date, initial, extra
   }, [open, initial]);
   const set = <K extends keyof DailyLogInput>(k: K, v: DailyLogInput[K]) => setF((p) => ({ ...p, [k]: v }));
 
-  const exposureOptions = [...TRIGGERS.filter((t) => DAILY_EXPOSURES.includes(t.id)), ...extraExposures];
+  const tracksCycle = useCycleTracking();
+  const exposureOptions = [
+    ...TRIGGERS.filter((t) => DAILY_EXPOSURES.includes(t.id) && (tracksCycle || t.id !== MENSTRUATION || f.exposures.includes(t.id))),
+    ...extraExposures,
+  ];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

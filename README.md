@@ -1,4 +1,6 @@
-# Personalized Migraine Monitor and Predictor
+# Aura
+
+A personalized migraine monitor and predictor.
 
 Migraine tracking with a guideline-based clinical decision support engine. It learns each person's triggers, forecasts their risk for today and tomorrow, and produces a summary they can bring to their doctor.
 

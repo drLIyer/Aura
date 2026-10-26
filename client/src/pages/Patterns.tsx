@@ -14,6 +14,7 @@ import type { ProfileRecord } from "@/lib/types";
 import { ALLEVIATORS, EXACERBATORS, TRIGGERS, WARNING_SIGNS } from "@shared/engine/domain/catalog";
 import { TRIGGER_PRIORS } from "@shared/engine/cds/priors";
 import type { PatternsInput } from "@shared/api";
+import { MENSTRUATION, useCycleTracking } from "@/lib/cycle";
 
 type Likelihood = PatternsInput["triggers"][number]["likelihood"];
 const LIKELIHOOD: { value: Likelihood | "no"; label: string }[] = [
@@ -41,6 +42,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(
 export default function Patterns() {
   const { toast } = useToast();
   const { data } = useQuery<ProfileRecord>({ queryKey: ["/api/profile"] });
+  const tracksCycle = useCycleTracking();
   const [p, setP] = useState<PatternsInput | null>(null);
   const [newTrigger, setNewTrigger] = useState("");
   useEffect(() => {
@@ -147,7 +149,7 @@ export default function Patterns() {
       <Card className="p-6">
         <h2 className="text-lg font-semibold">What sets your migraines off?</h2>
         <p className="text-sm text-muted-foreground mb-2">For each one, how often does it lead to an attack within a day or so?</p>
-        {TRIGGERS.filter((t) => !DERIVED.has(t.id)).map((t) => triggerRow(t.id, t.label))}
+        {TRIGGERS.filter((t) => !DERIVED.has(t.id) && (tracksCycle || t.id !== MENSTRUATION)).map((t) => triggerRow(t.id, t.label))}
         {p.customTriggers.map((c) => triggerRow(c.id, c.label, true))}
         <div className="flex gap-2 mt-4">
           <Input placeholder="Something else? e.g. night shifts, long drives" value={newTrigger} onChange={(e) => setNewTrigger(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addCustom()} />

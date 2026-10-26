@@ -1,4 +1,4 @@
-# Personalized Migraine Monitor and Predictor
+# Aura — Personalized Migraine Monitor and Predictor
 
 ## Overview
 

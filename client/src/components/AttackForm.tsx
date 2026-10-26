@@ -23,6 +23,7 @@ import type { AttackInput } from "@shared/api";
 import { nowLocalDateTime } from "@/lib/dates";
 import type { Medication } from "@/lib/types";
 import ChipPicker from "./ChipPicker";
+import { MENSTRUATION, useCycleTracking } from "@/lib/cycle";
 
 type Dose = AttackInput["doses"][number];
 
@@ -70,6 +71,7 @@ function YesNo({ value, onChange, label }: { value?: boolean; onChange: (v: bool
 export default function AttackForm({ medications, customTriggers = [], initial, onSubmit, onCancel, onManageMedications, isSaving }: Props) {
   const [a, setA] = useState<AttackInput>(initial ?? empty());
   const [ongoing, setOngoing] = useState(!initial?.end);
+  const tracksCycle = useCycleTracking();
   const set = <K extends keyof AttackInput>(k: K, v: AttackInput[K]) => setA((p) => ({ ...p, [k]: v }));
 
   const hasAura = a.symptoms.some((s) => AURA_SYMPTOMS.includes(s));
@@ -178,7 +180,7 @@ export default function AttackForm({ medications, customTriggers = [], initial, 
 
       <div>
         <Label className="mb-2 block">What might have set it off?</Label>
-        <ChipPicker options={[...TRIGGERS, ...customTriggers]} value={a.triggers} onChange={(v) => set("triggers", v)} testId="attack-triggers" />
+        <ChipPicker options={[...TRIGGERS.filter((t) => tracksCycle || t.id !== MENSTRUATION || a.triggers.includes(t.id)), ...customTriggers]} value={a.triggers} onChange={(v) => set("triggers", v)} testId="attack-triggers" />
       </div>
 
       <div className="space-y-3">

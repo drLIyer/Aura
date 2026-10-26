@@ -8,6 +8,7 @@ import AttackForm from "@/components/AttackForm";
 import DateNav from "@/components/DateNav";
 import LoggingPanel from "@/components/LoggingPanel";
 import PeriodLogDialog from "@/components/PeriodLogDialog";
+import { useCycleTracking } from "@/lib/cycle";
 import { useToast } from "@/hooks/use-toast";
 import { formatLocalDateTime, nowLocalTime, parseLocalDate, todayLocal } from "@/lib/dates";
 import { apiJson, invalidateAll } from "@/lib/queryClient";
@@ -33,6 +34,7 @@ export default function Log({ date, onDateChange, initialSection, onSectionHandl
   const { toast } = useToast();
   const [editing, setEditing] = useState<Attack | "new" | null>(null);
   const [periodOpen, setPeriodOpen] = useState(false);
+  const tracksCycle = useCycleTracking();
   const [mealTime, setMealTime] = useState(nowLocalTime());
   const refs = { water: useRef<HTMLDivElement>(null), meal: useRef<HTMLDivElement>(null), supplements: useRef<HTMLDivElement>(null) };
   const q = `?date=${date}`;
@@ -187,21 +189,23 @@ export default function Log({ date, onDateChange, initialSection, onSectionHandl
           />
         </div>
 
-        <LoggingPanel
-          title="Periods"
-          icon={<Calendar className="w-5 h-5 text-pink-500" />}
-          entries={[...periods]
-            .reverse()
-            .slice(0, 6)
-            .map((p) => ({
-              id: p.id,
-              time: parseLocalDate(p.startDate).toLocaleDateString(),
-              value: p.endDate ? `to ${parseLocalDate(p.endDate).toLocaleDateString()}` : "Started",
-            }))}
-          quickAddOptions={[{ label: "Log or import", value: "open" }]}
-          onAdd={() => setPeriodOpen(true)}
-          onRemove={(id) => remove.mutate(`/api/cycle/${id}`)}
-        />
+        {tracksCycle && (
+          <LoggingPanel
+            title="Periods"
+            icon={<Calendar className="w-5 h-5 text-pink-500" />}
+            entries={[...periods]
+              .reverse()
+              .slice(0, 6)
+              .map((p) => ({
+                id: p.id,
+                time: parseLocalDate(p.startDate).toLocaleDateString(),
+                value: p.endDate ? `to ${parseLocalDate(p.endDate).toLocaleDateString()}` : "Started",
+              }))}
+            quickAddOptions={[{ label: "Log or import", value: "open" }]}
+            onAdd={() => setPeriodOpen(true)}
+            onRemove={(id) => remove.mutate(`/api/cycle/${id}`)}
+          />
+        )}
       </div>
 
       <Card className="p-6" data-testid="card-attack-history">

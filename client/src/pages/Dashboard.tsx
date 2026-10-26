@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import CheckInCard from "@/components/CheckInCard";
 import CheckInDialog from "@/components/CheckInDialog";
 import CycleTrackerCard from "@/components/CycleTrackerCard";
+import { useCycleTracking } from "@/lib/cycle";
 import DateNav from "@/components/DateNav";
 import ForecastCard from "@/components/ForecastCard";
 import PeriodLogDialog from "@/components/PeriodLogDialog";
@@ -37,6 +38,7 @@ export default function Dashboard({ date, onDateChange, onNavigate }: Props) {
   const q = `?date=${date}`;
 
   const { data: profile } = useQuery<ProfileRecord>({ queryKey: ["/api/profile"] });
+  const tracksCycle = useCycleTracking();
   const { data: forecast } = useQuery<Forecast>({ queryKey: [`/api/forecast${q}`] });
   const { data: recs = [] } = useQuery<Recommendation[]>({ queryKey: [`/api/recommendations${q}&audience=patient`] });
   const { data: checkIn } = useQuery<CheckIn | null>({ queryKey: [`/api/checkins/${date}`] });
@@ -117,7 +119,7 @@ export default function Dashboard({ date, onDateChange, onNavigate }: Props) {
       <QuickActions onAction={(a) => onNavigate("log", a as LogSection)} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <CycleTrackerCard status={cycle} onLogPeriod={() => setPeriodOpen(true)} />
+        {tracksCycle && <CycleTrackerCard status={cycle} onLogPeriod={() => setPeriodOpen(true)} />}
         <SupplementCard supplements={supplements} takenNames={intake.map((i) => i.name)} onToggle={(s) => toggleSupplement.mutate(s)} onManage={() => onNavigate("medications")} />
       </div>
 
