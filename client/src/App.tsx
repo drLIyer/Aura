@@ -28,7 +28,7 @@ function initialView(): View {
   return VIEWS.includes(v as View) ? (v as View) : "dashboard";
 }
 
-async function fetchUser(): Promise<{ id: string; firstName?: string | null } | null | "unavailable"> {
+async function fetchUser(): Promise<{ id: string; firstName?: string | null; lastName?: string | null } | null | "unavailable"> {
   const res = await fetch("/api/auth/user", { credentials: "include" });
   if (res.status === 401) return null;
   if (res.status === 404 || res.status === 503) return "unavailable";
@@ -57,13 +57,16 @@ function Shell() {
     window.scrollTo({ top: 0 });
   };
 
+  const authName = user && user !== "unavailable" ? [user.firstName, user.lastName].filter(Boolean).join(" ") : "";
+  const userName = profile?.profile.name || authName || null;
+
   if (isLoading) return <div className="min-h-screen flex items-center justify-center text-muted-foreground">Loading…</div>;
   if (!signedIn) return <Landing unavailable={user === "unavailable"} />;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20 print:bg-white">
       <div className="print:hidden">
-        <Header onConnectWearable={() => navigate("wearables")} onLogout={IS_DEMO ? undefined : () => (window.location.href = "/api/logout")} />
+        <Header userName={userName} currentView={view} onNavigate={(v) => navigate(v)} onLogout={IS_DEMO ? undefined : () => (window.location.href = "/api/logout")} />
       </div>
       {IS_DEMO && (
         <div className="bg-primary/10 border-b border-primary/20 text-sm text-center px-4 py-2 print:hidden" data-testid="banner-demo">
@@ -74,6 +77,9 @@ function Shell() {
       <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
         {view === "dashboard" && <Dashboard date={date} onDateChange={setDate} onNavigate={navigate} />}
         {view === "log" && <Log date={date} onDateChange={setDate} initialSection={logSection} onSectionHandled={() => setLogSection(null)} onNavigate={navigate} />}
+        {(view === "insights" || view === "patterns") && (
+          <PatternsSwitch current={view} onChange={(v) => navigate(v)} />
+        )}
         {view === "insights" && <Insights date={date} />}
         {view === "patterns" && <Patterns />}
         {view === "medications" && <Medications />}
@@ -82,6 +88,34 @@ function Shell() {
         {view === "report" && <Report date={date} />}
         {view === "guidelines" && <Guidelines />}
       </main>
+    </div>
+  );
+}
+
+/** "My patterns" has two halves: what the logs show, and what the patient has noticed themselves. */
+function PatternsSwitch({ current, onChange }: { current: View; onChange: (v: View) => void }) {
+  const options: { view: View; label: string }[] = [
+    { view: "insights", label: "What your data shows" },
+    { view: "patterns", label: "What you've noticed" },
+  ];
+  return (
+    <div className="mb-6 flex justify-center print:hidden">
+      <div className="inline-flex rounded-lg bg-muted p-1" role="tablist">
+        {options.map((o) => (
+          <button
+            key={o.view}
+            role="tab"
+            aria-selected={current === o.view}
+            onClick={() => onChange(o.view)}
+            data-testid={`tab-${o.view}`}
+            className={`rounded-md px-4 py-1.5 text-sm font-medium transition ${
+              current === o.view ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

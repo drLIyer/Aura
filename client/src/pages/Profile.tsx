@@ -96,6 +96,10 @@ export default function Profile() {
 
       <Card className="p-6 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="sm:col-span-3">
+            <Label htmlFor="pf-name">Your name</Label>
+            <Input id="pf-name" className="sm:max-w-sm" maxLength={120} placeholder="Shown on your account menu and doctor report" value={p.name ?? ""} onChange={(e) => set("name", e.target.value === "" ? undefined : e.target.value)} />
+          </div>
           <div>
             <Label htmlFor="pf-by">Year of birth</Label>
             <Input id="pf-by" type="number" min={1900} max={2100} value={p.birthYear ?? ""} onChange={(e) => set("birthYear", e.target.value === "" ? undefined : Number(e.target.value))} />

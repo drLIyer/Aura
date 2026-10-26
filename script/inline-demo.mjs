@@ -14,7 +14,8 @@ const css = asset(/<link rel="stylesheet"[^>]*href="\.?\/?([^"]+\.css)"/);
 const js = asset(/<script type="module"[^>]*src="\.?\/?([^"]+\.js)"/).replace(/<\/script/gi, "<\\/script");
 const fonts = "https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap";
 
-const page = `<title>Migraine Monitor Demo</title>
+const page = `<meta charset="utf-8">
+<title>Migraine Monitor Demo</title>
 <meta name="description" content="Demo of the Personalized Migraine Monitor and Predictor with a fictional patient.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

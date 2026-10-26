@@ -122,7 +122,7 @@ export default function Patterns() {
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
       <div>
-        <h1 className="text-3xl font-bold">My migraine patterns</h1>
+        <h1 className="text-3xl font-bold">What you've noticed</h1>
         <p className="text-muted-foreground mt-1">
           You know your migraines best. Your answers set the starting point for your forecast; as you log, the app checks them against what actually happens
           and adjusts.

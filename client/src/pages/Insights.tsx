@@ -66,7 +66,7 @@ export default function Insights({ date }: { date: string }) {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Insights</h1>
+      <h1 className="text-3xl font-bold">What your data shows</h1>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Stat label="Migraine days" value={s.migraineDays} sub={`last 30 days · ${data.summary90.migraineDays} in 90`} />
