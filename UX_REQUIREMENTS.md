@@ -1,4 +1,4 @@
-# Migraine Tracker — UX Requirements
+# Personalized Migraine Monitor and Predictor — UX Requirements
 
 **Version:** 1.0  
 **Date:** April 2026  

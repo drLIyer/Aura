@@ -1,4 +1,4 @@
-# Migraine Tracker Design Guidelines
+# Personalized Migraine Monitor and Predictor — Design Guidelines
 
 ## Design Approach
 

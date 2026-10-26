@@ -1,4 +1,4 @@
-# Migraine Tracker — Product Requirements & Technical Specification
+# Personalized Migraine Monitor and Predictor — Product Requirements & Technical Specification
 
 **Version:** 1.0  
 **Date:** April 2026  
@@ -25,7 +25,7 @@
 
 ## 1. Product Overview
 
-Migraine Tracker is a personal health web application that helps a single user understand and anticipate migraine episodes. The core insight driving the product is that migraines are rarely random — they correlate with hormonal cycles, sleep quality, hydration levels, and stress. By logging daily health data and tracking menstrual cycle patterns, the app calculates a daily migraine probability score and surfaces actionable insights.
+Personalized Migraine Monitor and Predictor is a personal health web application that helps a single user understand and anticipate migraine episodes. The core insight driving the product is that migraines are rarely random — they correlate with hormonal cycles, sleep quality, hydration levels, and stress. By logging daily health data and tracking menstrual cycle patterns, the app calculates a daily migraine probability score and surfaces actionable insights.
 
 The current version is a **single-user, personal-use application** with no authentication layer. A separate multi-user version is planned for a future project.
 

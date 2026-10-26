@@ -1,8 +1,16 @@
-# Aura
+# Personalized Migraine Monitor and Predictor
 
-Migraine monitoring and clinical decision support system.
+Personalized migraine tracking, health logging, and risk prediction.
 
-![Aura dashboard preview](screenshots/aura-ux.jpg)
+## UX preview
+
+**Desktop**
+
+![Personalized Migraine Monitor and Predictor desktop dashboard](screenshots/aura-ux.jpg)
+
+**Mobile**
+
+![Personalized Migraine Monitor and Predictor mobile dashboard](screenshots/aura-ux-mobile.jpg)
 
 ## Sample data
 

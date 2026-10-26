@@ -1,4 +1,4 @@
-# Migraine Tracker
+# Personalized Migraine Monitor and Predictor
 
 ## Overview
 
