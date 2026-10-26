@@ -1,0 +1,14 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "LQAfImAU__xdE7-d6qt3w"
+uri = "file://PRD_AND_TECH_SPEC.md"
+type = "text"
+title = "Migraine Tracker — PRD & Tech Spec"
+
+[[outputs]]
+id = "gMUXRwrYkxwZYngIptZqf"
+uri = "file://UX_REQUIREMENTS.md"
+type = "text"
+title = "Migraine Tracker — UX Requirements"
