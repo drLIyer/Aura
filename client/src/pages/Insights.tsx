@@ -50,7 +50,7 @@ function Stat({ label, value, sub }: { label: string; value: string | number; su
 }
 
 export default function Insights({ date }: { date: string }) {
-  const { data } = useQuery<InsightsData>({ queryKey: [`/api/insights?date=${date}`] });
+  const { data, isError, refetch } = useQuery<InsightsData>({ queryKey: [`/api/insights?date=${date}`] });
   const { data: trends = [] } = useQuery<{ date: string; readiness: number | null; sleep: number | null; stress: number | null; migraine: number }[]>({
     queryKey: [`/api/trends?date=${date}&days=30`],
   });
@@ -63,6 +63,15 @@ export default function Insights({ date }: { date: string }) {
       }),
     onSuccess: () => invalidateAll(),
   });
+  if (isError)
+    return (
+      <p role="alert" className="text-sm text-destructive">
+        Couldn't load your patterns right now.{" "}
+        <button className="underline" onClick={() => refetch()}>
+          Try again
+        </button>
+      </p>
+    );
   if (!data) return <p className="text-muted-foreground">Loading…</p>;
   const s = data.summary30;
 

@@ -22,6 +22,10 @@ To try the demo yourself, run `npm run build:demo` and open `dist/demo/migraine-
 
 ![Dashboard on mobile](screenshots/aura-ux-mobile.jpg)
 
+**My patterns**
+
+![My patterns: what your data shows](screenshots/analytics-ux.jpg)
+
 ## What it does
 
 - **Logging:** quick logs for water, meals (with time), supplements and periods (manual entry or CSV import from Clue, Flo, Fitbit, Oura or Garmin).

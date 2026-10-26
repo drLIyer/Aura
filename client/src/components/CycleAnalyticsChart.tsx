@@ -32,17 +32,21 @@ export default function CycleAnalyticsChart({ data }: { data: CyclePhaseRow[] })
           ? `${Math.round(peri.attackShare * 100)}% of your attacks started in the days around your period, which make up ${Math.round(peri.dayShare * 100)}% of your days (${peri.ratio.toFixed(1)}× what chance alone would give).`
           : "Log periods and attacks to see whether a part of your cycle stands out."}
       </p>
-      <ResponsiveContainer width="100%" height={260}>
-        <BarChart data={rows}>
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-          <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-          <YAxis unit="%" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-          <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "0.5rem" }} />
-          <Legend />
-          <Bar dataKey="attacks" name="Share of attacks" fill="hsl(var(--chart-1))" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="days" name="Share of days" fill="hsl(var(--muted-foreground))" fillOpacity={0.35} radius={[4, 4, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
+      {data.some((d) => d.attacks > 0) ? (
+        <ResponsiveContainer width="100%" height={260}>
+          <BarChart data={rows}>
+            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+            <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+            <YAxis unit="%" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+            <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "0.5rem" }} />
+            <Legend />
+            <Bar dataKey="attacks" name="Share of attacks" fill="hsl(var(--chart-1))" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="days" name="Share of days" fill="hsl(var(--muted-foreground))" fillOpacity={0.35} radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      ) : (
+        <p className="py-12 text-center text-sm text-muted-foreground">No attacks logged alongside your cycle yet.</p>
+      )}
     </Card>
   );
 }
