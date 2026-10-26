@@ -257,3 +257,38 @@ describe('cycle tracking eligibility', () => {
     expect(tracksMenstrualCycle(undefined, 2026)).toBe(false);
   });
 });
+
+describe('pregnancy', () => {
+  const pregnant = (meds: Medication[], attacks: Attack[] = []): AppState => ({
+    ...emptyState(),
+    profile: { ...emptyState().profile, sex: 'female', birthYear: 1992, pregnant: true },
+    medications: meds,
+    attacks,
+  });
+  const ids = (s: AppState) => evaluate(s, TODAY).map((r) => r.id);
+
+  it('pauses cycle tracking', () => {
+    expect(tracksMenstrualCycle({ sex: 'female', birthYear: 1992, pregnant: true }, 2026)).toBe(false);
+  });
+
+  it('gives an acetaminophen-first plan and flags NSAIDs, opioids and butalbital', () => {
+    const opioid: Medication = { id: 'op', name: 'Codeine / Tramadol / other opioid', cls: 'opioid', role: 'acute', active: true };
+    const r = ids(pregnant([ibuprofen, opioid]));
+    expect(r).toEqual(expect.arrayContaining(['pregnancy-acute-plan', 'pregnancy-nsaid', 'pregnancy-opioid-butalbital']));
+    expect(ids(pregnant([]))).not.toContain('pregnancy-nsaid');
+  });
+
+  it('does not flag low-dose aspirin prescribed for preeclampsia', () => {
+    const aspirin: Medication = { id: 'asa', name: 'Aspirin', cls: 'nsaid', role: 'other', dose: '81 mg', active: true };
+    expect(ids(pregnant([aspirin]))).not.toContain('pregnancy-nsaid');
+  });
+
+  it('asks for a same-day blood pressure check for a changed headache', () => {
+    expect(ids(pregnant([], [attack(TODAY, { redFlags: ['pattern-change'] })]))).toContain('pregnancy-headache-check');
+    expect(ids(pregnant([], [attack(TODAY)]))).not.toContain('pregnancy-headache-check');
+  });
+
+  it('says nothing about pregnancy otherwise', () => {
+    expect(ids(withAttacks([])).some((id) => id.startsWith('pregnancy'))).toBe(false);
+  });
+});

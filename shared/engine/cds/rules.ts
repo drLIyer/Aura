@@ -31,6 +31,81 @@ const recentAttacks = (ctx: RuleContext, days: number) =>
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 // ---------------------------------------------------------------------------------------
+// Pregnancy and the first weeks after birth (profile.pregnant covers both)
+
+const NSAID_NAME = /ibuprofen|naproxen|diclofenac|aspirin|celecoxib|ketorolac|indomethacin|meloxicam/i;
+/** Low-dose aspirin prescribed to prevent preeclampsia is the one NSAID use the FDA warning exempts. */
+const isLowDoseAspirin = (m: Medication) =>
+  /aspirin/i.test(m.name) && !/acetaminophen|caffeine/i.test(m.name) && (/\b(75|81|100|150)\s*mg\b/i.test(m.dose ?? '') || /pre-?eclampsia/i.test(m.reason ?? ''));
+
+/** Warning signs from the attack form that, in pregnancy, call for a blood-pressure check the same day. */
+const PREGNANCY_CHECK_FLAGS = new Set(['pattern-change', 'vision-loss', 'thunderclap', 'neuro-deficit', 'progressive', 'positional', 'seizure']);
+
+export function pregnancyRecommendations(ctx: RuleContext): Recommendation[] {
+  const out: Recommendation[] = [];
+  const meds = ctx.activeMeds;
+
+  const avoid = meds.filter((m) => ['ergot', 'cgrp-mab', 'gepant', 'arb-ace', 'anticonvulsant'].includes(m.cls) || /valpro|topiramate/i.test(m.name));
+  if (avoid.length) {
+    out.push({
+      id: 'pregnancy-meds',
+      severity: 'warning',
+      category: 'interaction',
+      title: 'Medicines to review in pregnancy',
+      detail: `${avoid.map((m) => m.name).join(', ')}: these are contraindicated, or there is not enough safety data, during pregnancy. Contact your prescriber before your next dose. Do not stop anticonvulsants abruptly without advice.`,
+      sources: ['aan-ahs-2026-prevention'],
+    });
+  }
+
+  const opioidOrButalbital = meds.filter((m) => m.cls === 'opioid' || /butalbital/i.test(m.name));
+  if (opioidOrButalbital.length) {
+    out.push({
+      id: 'pregnancy-opioid-butalbital',
+      severity: 'warning',
+      category: 'interaction',
+      title: 'Not recommended for migraine in pregnancy',
+      detail: `${opioidOrButalbital.map((m) => m.name).join(', ')}: ACOG advises against opioids and butalbital for migraine in pregnancy (they cause rebound headaches, and opioids can cause withdrawal in the newborn). Ask your clinician about alternatives.`,
+      sources: ['acog-2022-pregnancy-headache'],
+    });
+  }
+
+  const nsaids = meds.filter((m) => (m.cls === 'nsaid' || NSAID_NAME.test(m.name)) && !isLowDoseAspirin(m));
+  if (nsaids.length) {
+    out.push({
+      id: 'pregnancy-nsaid',
+      severity: 'warning',
+      category: 'interaction',
+      title: 'Anti-inflammatory painkillers in pregnancy',
+      detail: `${nsaids.map((m) => m.name).join(', ')}: the FDA advises avoiding NSAIDs from 20 weeks of pregnancy, and ACOG limits them to the second trimester. Check with your obstetric team before using them. Low-dose aspirin they prescribed is different and should be continued.`,
+      sources: ['fda-2020-nsaid-pregnancy', 'acog-2022-pregnancy-headache'],
+    });
+  }
+
+  out.push({
+    id: 'pregnancy-acute-plan',
+    severity: 'info',
+    category: 'acute-treatment',
+    title: 'Treating a migraine during pregnancy',
+    detail:
+      'Acetaminophen (Tylenol) is the first choice. If it is not enough, ACOG lists metoclopramide (an anti-nausea medicine that also eases migraine) and then sumatriptan as next steps. Agree a plan with your obstetric team before the next attack. Rest, regular meals, fluids and sleep matter even more now. Attacks can get better or worse during pregnancy and often return soon after birth, so keep logging: your forecast adjusts to what is happening now.',
+    sources: ['acog-2022-pregnancy-headache'],
+  });
+
+  const flagged = recentAttacks(ctx, 2).flatMap((a) => a.redFlags.filter((f) => PREGNANCY_CHECK_FLAGS.has(f)));
+  if (flagged.length) {
+    out.push({
+      id: 'pregnancy-headache-check',
+      severity: 'warning',
+      category: 'safety',
+      title: 'Let your maternity team know about this headache today',
+      detail: `A headache in the last 2 days was ${[...new Set(flagged)].map((f) => labelOf(RED_FLAGS, f).toLowerCase()).join('; ')}. In pregnancy and the weeks after birth, a headache that is new or different, or comes with vision changes, swelling or pain under the ribs, should have blood pressure checked the same day. Usually it is migraine, but this rules out preeclampsia.`,
+      sources: ['acog-2022-pregnancy-headache'],
+    });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------------------
 // Safety: red flags, prolonged attacks and atypical aura
 
 export const redFlagRule: Rule = (ctx) => {
@@ -513,21 +588,7 @@ export const interactionRule: Rule = (ctx) => {
     });
   }
 
-  if (ctx.state.profile.pregnant) {
-    const avoid = ctx.activeMeds.filter((m) =>
-      ['ergot', 'cgrp-mab', 'gepant', 'arb-ace', 'anticonvulsant'].includes(m.cls) || /valpro|topiramate/i.test(m.name),
-    );
-    if (avoid.length) {
-      out.push({
-        id: 'pregnancy-meds',
-        severity: 'warning',
-        category: 'interaction',
-        title: 'Medicines to review in pregnancy',
-        detail: `${avoid.map((m) => m.name).join(', ')}: these are contraindicated, or there is not enough safety data, during pregnancy. Contact your prescriber before your next dose. Do not stop anticonvulsants abruptly without advice.`,
-        sources: ['aan-ahs-2026-prevention'],
-      });
-    }
-  }
+  if (ctx.state.profile.pregnant) out.push(...pregnancyRecommendations(ctx));
 
   if (has(ctx, 'nsaid')) {
     const risks = [

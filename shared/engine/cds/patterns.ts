@@ -336,11 +336,15 @@ export const DEFAULT_PERIOD_DAYS = 5;
 export const MENSTRUATING_AGES = { from: 10, to: 55 } as const;
 
 /**
- * Whether to show cycle tracking: female and of menstruating age. An unknown birth year counts as
- * in range, since the patient said they are female and may simply not have filled it in.
+ * Whether to show cycle tracking: female, of menstruating age and not pregnant or just postpartum
+ * (periods have stopped). An unknown birth year counts as in range, since the patient said they
+ * are female and may simply not have filled it in.
  */
-export function tracksMenstrualCycle(profile: { sex?: string; birthYear?: number } | null | undefined, year: number): boolean {
-  if (profile?.sex !== 'female') return false;
+export function tracksMenstrualCycle(
+  profile: { sex?: string; birthYear?: number; pregnant?: boolean } | null | undefined,
+  year: number,
+): boolean {
+  if (profile?.sex !== 'female' || profile.pregnant) return false;
   if (!profile.birthYear) return true;
   const age = year - profile.birthYear;
   return age >= MENSTRUATING_AGES.from && age <= MENSTRUATING_AGES.to;

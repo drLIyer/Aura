@@ -145,6 +145,9 @@ export default function Profile() {
             <Checkbox checked={Boolean(p.pregnant)} onCheckedChange={(v) => set("pregnant", v === true)} /> Pregnant or gave birth in the last 6 weeks
           </label>
         </div>
+        {p.pregnant && (
+          <p className="text-xs text-muted-foreground">Period tracking is paused, and advice on medicines and warning signs follows pregnancy guidance. Untick this when your periods return.</p>
+        )}
       </Card>
 
       <Card className="p-6">
