@@ -14,7 +14,7 @@ export const PROVIDER = "open-wearables";
 /** Shown when the gateway's provider list can't be fetched. */
 export const DEFAULT_PROVIDERS = ["oura", "fitbit", "garmin", "whoop", "polar", "suunto", "withings", "ultrahuman"];
 
-export function isConfigured(env = process.env): boolean {
+export function isConfigured(env: Record<string, string | undefined> = typeof process !== "undefined" ? process.env : {}): boolean {
   return Boolean(env.OPEN_WEARABLES_URL && env.OPEN_WEARABLES_API_KEY);
 }
 
@@ -22,8 +22,8 @@ type Fetch = typeof fetch;
 
 export class OpenWearablesClient {
   constructor(
-    private baseUrl = process.env.OPEN_WEARABLES_URL!,
-    private apiKey = process.env.OPEN_WEARABLES_API_KEY!,
+    private baseUrl = typeof process !== "undefined" ? process.env.OPEN_WEARABLES_URL! : "",
+    private apiKey = typeof process !== "undefined" ? process.env.OPEN_WEARABLES_API_KEY! : "",
     private fetchImpl: Fetch = fetch,
   ) {}
 

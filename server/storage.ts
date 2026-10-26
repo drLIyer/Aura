@@ -1,4 +1,3 @@
-import { randomUUID } from "crypto";
 import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
 import type {
   AttackInput,
@@ -131,6 +130,9 @@ function defaultProfile(): ProfileRecord {
   const s = emptyState();
   return { profile: s.profile as ProfileInput, patterns: s.patterns as PatternsInput, timezone: null };
 }
+
+/** Works in Node 19+ and browsers (the demo runs this storage in the page). */
+const randomUUID = () => globalThis.crypto.randomUUID();
 
 // ---------------------------------------------------------------------------------------
 // In-memory storage: development without a database, and tests.

@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { todayLocal, userTimeZone } from "@/lib/dates";
 import { apiJson, invalidateAll } from "@/lib/queryClient";
 import type { ProfileRecord } from "@/lib/types";
+import { IS_DEMO } from "@/lib/demo";
 import { CONDITIONS, FAMILY_HISTORY } from "@shared/engine/domain/catalog";
 import { midasGrade } from "@shared/engine/cds/metrics";
 import type { ProfileInput } from "@shared/api";
@@ -207,25 +208,33 @@ export default function Profile() {
       <Card className="p-6 space-y-3">
         <h2 className="text-lg font-semibold">Your data</h2>
         <p className="text-sm text-muted-foreground">Your data is only visible to you when signed in. You can take a copy or delete it at any time.</p>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" asChild>
-            <a href="/api/export/json">Download all my data (JSON)</a>
-          </Button>
-          <Button variant="outline" asChild>
-            <a href="/api/export/ml-data">Download research CSV</a>
-          </Button>
-          <Button variant="outline" onClick={() => loadDemo.mutate()} title="Development servers only">
-            Load demo data
-          </Button>
-          <Button
-            variant="destructive"
-            onClick={() => {
-              if (window.confirm("Delete all your data permanently? This cannot be undone.")) deleteAll.mutate();
-            }}
-          >
-            Delete all my data
-          </Button>
-        </div>
+        {IS_DEMO ? (
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => loadDemo.mutate()} data-testid="button-reset-demo">
+              Reset demo data
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" asChild>
+              <a href="/api/export/json">Download all my data (JSON)</a>
+            </Button>
+            <Button variant="outline" asChild>
+              <a href="/api/export/ml-data">Download research CSV</a>
+            </Button>
+            <Button variant="outline" onClick={() => loadDemo.mutate()} title="Development servers only">
+              Load demo data
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (window.confirm("Delete all your data permanently? This cannot be undone.")) deleteAll.mutate();
+              }}
+            >
+              Delete all my data
+            </Button>
+          </div>
+        )}
       </Card>
     </div>
   );

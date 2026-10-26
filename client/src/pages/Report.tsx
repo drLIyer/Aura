@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import RecommendationsCard from "@/components/RecommendationsCard";
 import { formatLocalDateTime, formatLongDate } from "@/lib/dates";
 import type { Medication, Recommendation } from "@/lib/types";
+import { IS_DEMO } from "@/lib/demo";
 import { CONDITIONS, FAMILY_HISTORY, MEDICATION_CLASS_LABELS, SYMPTOMS, TRIGGERS, WARNING_SIGNS, labelOf } from "@shared/engine/domain/catalog";
 import type { SummaryStats } from "@shared/engine/cds/metrics";
 import type { TriggerWeight } from "@shared/engine/cds/riskModel";
@@ -57,9 +58,11 @@ export default function Report({ date }: { date: string }) {
             {r.profile.sex !== "unspecified" && ` · ${r.profile.sex}`}
           </p>
         </div>
-        <Button variant="outline" onClick={() => window.print()} className="print:hidden">
-          <Printer className="w-4 h-4 mr-2" /> Print
-        </Button>
+        {!IS_DEMO && (
+          <Button variant="outline" onClick={() => window.print()} className="print:hidden">
+            <Printer className="w-4 h-4 mr-2" /> Print
+          </Button>
+        )}
       </div>
 
       <Section title="Frequency and disability">

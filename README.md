@@ -44,6 +44,14 @@ AURA_DEV_USER_ID=me npm run dev
 
 This signs every request in as user `me` and stores data in memory. Use Profile → **Load demo data** to see the app with 120 days of example data. `AURA_DEV_USER_ID` is refused when `NODE_ENV=production`.
 
+### Demo without a server
+
+```bash
+npm run build:demo   # → dist/demo/migraine-demo.html
+```
+
+This builds one self-contained page in which the app's real API (`server/api.ts`) runs inside the browser on in-memory storage, with a fictional patient. There's no server and no sign-in, nothing leaves the browser, and changes reset on reload. You can host it as a static file anywhere.
+
 ### On Replit / production
 
 | Variable | Purpose |
@@ -76,7 +84,7 @@ The old tables are not changed.
 | `shared/engine/` | Decision support: domain model, guideline registry (`domain/guidelines.ts`), rules, trigger analysis, risk model. Pure functions, unit-tested. |
 | `shared/api.ts` | Request validation used by both server and client. |
 | `shared/schema.ts` | Database tables. Every table has a `user_id`. |
-| `server/` | Express API (`routes.ts`), sign-in (`auth.ts`), storage (`storage.ts`), engine adapter, Open Wearables client, ML export. |
+| `server/` | Framework-neutral API (`api.ts`) with an Express adapter (`routes.ts`), sign-in (`auth.ts`), storage (`storage.ts`), engine adapter, Open Wearables client, ML export. |
 | `client/src/` | React UI. |
 | `ml/` | Research export preprocessing (see `ml/KNOWN_LIMITATIONS.md`). |
 | `reports/`, `research_notes/` | Literature review behind the trigger starting values and epidemiology. |

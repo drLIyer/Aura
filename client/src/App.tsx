@@ -17,6 +17,7 @@ import Report from "@/pages/Report";
 import Wearables from "@/pages/Wearables";
 import { todayLocal, userTimeZone } from "@/lib/dates";
 import type { ProfileRecord } from "@/lib/types";
+import { IS_DEMO } from "@/lib/demo";
 
 export type LogSection = "water" | "meal" | "supplements" | "migraine" | null;
 export type View = "dashboard" | "log" | "insights" | "patterns" | "medications" | "profile" | "wearables" | "report" | "guidelines";
@@ -52,7 +53,7 @@ function Shell() {
   const navigate = (next: View, section: LogSection = null) => {
     setLogSection(section);
     setView(next);
-    window.history.replaceState(null, "", next === "dashboard" ? "/" : `/?view=${next}`);
+    window.history.replaceState(null, "", next === "dashboard" ? window.location.pathname : `?view=${next}`);
     window.scrollTo({ top: 0 });
   };
 
@@ -62,8 +63,13 @@ function Shell() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20 print:bg-white">
       <div className="print:hidden">
-        <Header onConnectWearable={() => navigate("wearables")} onLogout={() => (window.location.href = "/api/logout")} />
+        <Header onConnectWearable={() => navigate("wearables")} onLogout={IS_DEMO ? undefined : () => (window.location.href = "/api/logout")} />
       </div>
+      {IS_DEMO && (
+        <div className="bg-primary/10 border-b border-primary/20 text-sm text-center px-4 py-2 print:hidden" data-testid="banner-demo">
+          Demo with a fictional patient and 120 days of example data. Everything runs in your browser; changes reset when you reload.
+        </div>
+      )}
       <Navigation currentView={view} onViewChange={(v) => navigate(v)} />
       <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
         {view === "dashboard" && <Dashboard date={date} onDateChange={setDate} onNavigate={navigate} />}
