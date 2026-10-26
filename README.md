@@ -4,6 +4,14 @@ A personalized migraine monitor and predictor.
 
 Migraine tracking with a guideline-based clinical decision support engine. It learns each person's triggers, forecasts their risk for today and tomorrow, and produces a summary they can bring to their doctor.
 
+## Demo (29 seconds)
+
+![Aura demo: forecast, patterns, doctor report, guidelines and wearables](docs/aura-demo.gif)
+
+[Watch the full-quality video (MP4)](docs/aura-demo.mp4). It shows a fictional patient with 120 days of example data.
+
+To try the demo yourself, run `npm run build:demo` and open `dist/demo/migraine-demo.html` in a browser. It runs entirely in the browser and needs no server, sign-in or database.
+
 ## UX preview
 
 **Desktop**
