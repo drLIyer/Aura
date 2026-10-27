@@ -65,6 +65,11 @@ describe("DbStorage (Postgres)", () => {
 
     await storage.saveProfile("u1", { patterns: { triggers: [{ id: "late-meal", likelihood: "often" }], customTriggers: [], alleviators: [], exacerbators: [], warningSigns: [] }, timezone: "America/Chicago" });
     expect((await storage.getProfile("u1")).timezone).toBe("America/Chicago");
+    expect((await storage.getProfile("u1")).memory).toEqual({ lifeEvents: [], dismissedNotes: [] });
+    const memory = { lifeEvents: [{ id: "e1", date: "2026-10-20", label: "New job", kind: "work" as const }], dismissedNotes: ["n1"] };
+    await storage.saveProfile("u1", { memory });
+    expect((await storage.getProfile("u1")).memory).toEqual(memory);
+    expect((await storage.getProfile("u2")).memory).toEqual({ lifeEvents: [], dismissedNotes: [] });
 
     const state = await buildAppState(storage, "u1", "2026-10-26");
     expect(state.dailyLogs[0].waterLiters).toBe(0.5);

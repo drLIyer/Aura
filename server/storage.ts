@@ -9,6 +9,7 @@ import type {
 } from "@shared/api";
 import * as schema from "@shared/schema";
 import { emptyState } from "@shared/engine/state";
+import { emptyMemory, type AssistMemory } from "@shared/assist/types";
 
 /**
  * Persistence. Every method takes the signed-in user's id, and every query filters on it,
@@ -19,6 +20,8 @@ export interface ProfileRecord {
   profile: ProfileInput;
   patterns: PatternsInput;
   timezone: string | null;
+  /** What the assistant keeps: confirmed life events and dismissed notes. */
+  memory: AssistMemory;
 }
 export interface MedicationRecord extends MedicationInput {
   id: string;
@@ -128,7 +131,7 @@ export interface IStorage {
 
 function defaultProfile(): ProfileRecord {
   const s = emptyState();
-  return { profile: s.profile as ProfileInput, patterns: s.patterns as PatternsInput, timezone: null };
+  return { profile: s.profile as ProfileInput, patterns: s.patterns as PatternsInput, timezone: null, memory: emptyMemory() };
 }
 
 /** Works in Node 19+ and browsers (the demo runs this storage in the page). */
@@ -380,16 +383,17 @@ export class DbStorage implements IStorage {
       profile: { ...base.profile, ...(row.profile as ProfileInput) },
       patterns: { ...base.patterns, ...(row.patterns as PatternsInput) },
       timezone: row.timezone,
+      memory: { ...base.memory, ...((row.memory as Partial<AssistMemory> | null) ?? {}) },
     };
   }
   async saveProfile(userId: string, update: Partial<ProfileRecord>) {
     const next = { ...(await this.getProfile(userId)), ...update };
     await this.db
       .insert(schema.profiles)
-      .values({ userId, profile: next.profile, patterns: next.patterns, timezone: next.timezone })
+      .values({ userId, profile: next.profile, patterns: next.patterns, timezone: next.timezone, memory: next.memory })
       .onConflictDoUpdate({
         target: schema.profiles.userId,
-        set: { profile: next.profile, patterns: next.patterns, timezone: next.timezone, updatedAt: new Date() },
+        set: { profile: next.profile, patterns: next.patterns, timezone: next.timezone, memory: next.memory, updatedAt: new Date() },
       });
     return next;
   }

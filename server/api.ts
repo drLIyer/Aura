@@ -24,11 +24,17 @@ import { addDays, dateRange } from "@shared/engine/domain/dates";
 import { CONDITIONS, FAMILY_HISTORY, labelOf } from "@shared/engine/domain/catalog";
 import type { AppState, Recommendation } from "@shared/engine/domain/types";
 import { demoState } from "@shared/engine/demo";
+import { buildAssistContext, buildCaptureContext } from "@shared/assist/context";
+import { RuleProvider } from "@shared/assist/ruleProvider";
+import { sanitizeProposal } from "@shared/assist/sanitize";
+import { screenText } from "@shared/assist/safetyScreen";
+import { lifeEventInput, type AssistProvider } from "@shared/assist/types";
+import { localDateTime as localDateTimeInput } from "@shared/api";
 import { buildAppState } from "./engineState";
 import { convertToCSV, generateMLDataset } from "./mlExport";
 import { DEFAULT_PROVIDERS, isConfigured as wearablesConfigured, OpenWearablesClient, PROVIDER, syncUser } from "./openWearables";
 import type { IStorage } from "./storage";
-import { isValidTimeZone, localDate } from "./time";
+import { isValidTimeZone, localDate, localDateTime } from "./time";
 
 /**
  * The API, independent of the web framework. Express serves it on the real server (routes.ts);
@@ -83,11 +89,14 @@ export interface ApiOptions {
   allowDemo: boolean;
   /** Lets tests replace the gateway client. */
   wearablesClient?: () => OpenWearablesClient;
+  /** The assistant: Claude when a key is configured, otherwise fixed rules (basic mode). */
+  assistant?: AssistProvider;
 }
 
 /** Registers every /api route. The caller must already have authenticated the request (req.userId). */
-export function registerApi(app: Router, { storage, allowDemo, wearablesClient }: ApiOptions): void {
+export function registerApi(app: Router, { storage, allowDemo, wearablesClient, assistant = new RuleProvider() }: ApiOptions): void {
   const owClient = wearablesClient ?? (() => new OpenWearablesClient());
+  const basic = new RuleProvider();
 
   const uid = (req: Request) => req.userId!;
 
@@ -418,6 +427,118 @@ export function registerApi(app: Router, { storage, allowDemo, wearablesClient }
     "/api/me/data",
     handle(async (req, res) => {
       await storage.deleteAllUserData(uid(req));
+      res.status(204).end();
+    }),
+  );
+
+  // ---------------------------------------------------------------- Assistant ("Talk to Aura")
+
+  /** The user's local wall-clock time: the client's own value if sent, else from their time zone. */
+  async function nowFor(req: Request, sent?: string): Promise<string> {
+    if (sent && localDateTimeInput.safeParse(sent).success) return sent.slice(0, 16);
+    const header = req.header("x-timezone");
+    if (isValidTimeZone(header)) return localDateTime(new Date(), header);
+    const { timezone } = await storage.getProfile(uid(req));
+    return localDateTime(new Date(), isValidTimeZone(timezone) ? timezone : "UTC");
+  }
+
+  async function assistContextFor(req: Request, audience: "patient" | "clinician" = "patient") {
+    const { state, date } = await stateFor(req);
+    const { memory } = await storage.getProfile(uid(req));
+    return buildAssistContext(state, date, audience, memory);
+  }
+
+  app.get("/api/assist/status", handle(async (_req, res) => res.json({ ai: assistant.mode === "ai" })));
+
+  // AI calls cost money: past a per-user budget, answer in basic mode for a while instead of failing.
+  const AI_BUDGET = { calls: 40, windowMs: 10 * 60_000 };
+  const aiCalls = new Map<string, number[]>();
+  function providerFor(req: Request): { provider: AssistProvider; notice?: string } {
+    if (assistant.mode !== "ai") return { provider: assistant };
+    const now = Date.now();
+    const recent = (aiCalls.get(uid(req)) ?? []).filter((t) => now - t < AI_BUDGET.windowMs);
+    if (recent.length >= AI_BUDGET.calls) return { provider: basic, notice: "You've asked a lot in a short time, so Aura is using basic mode for a few minutes." };
+    aiCalls.set(uid(req), [...recent, now]);
+    return { provider: assistant };
+  }
+
+  // Proposes entries only. Nothing is saved until the patient confirms through the normal routes.
+  app.post(
+    "/api/assist/capture",
+    handle(async (req, res) => {
+      const { text, now: sent } = z.object({ text: z.string().trim().min(1).max(4000), now: z.string().optional() }).parse(req.body);
+      const now = await nowFor(req, sent);
+      const { state } = await stateFor(req);
+      const ctx = buildCaptureContext(state, now);
+      // The fixed safety screen runs first. If it fires, the text never goes to a model.
+      const screen = screenText(text);
+      const { provider, notice } = screen.urgent ? { provider: basic } : providerFor(req);
+      const proposal = await provider.capture(text, ctx);
+      res.json(sanitizeProposal({ ...proposal, ...(notice ? { notice } : {}) }, ctx, screen));
+    }),
+  );
+
+  app.post(
+    "/api/assist/ask",
+    handle(async (req, res) => {
+      const { question, audience } = z.object({ question: z.string().trim().min(1).max(1000), audience: z.enum(["patient", "clinician"]).default("patient") }).parse(req.body);
+      const screen = screenText(question);
+      const ctx = await assistContextFor(req, audience);
+      const { provider, notice } = screen.urgent ? { provider: basic } : providerFor(req);
+      const answer = await provider.ask(question, ctx);
+      res.json({ ...answer, ...(notice ? { notice } : {}), screen });
+    }),
+  );
+
+  app.get(
+    "/api/assist/notes",
+    handle(async (req, res) => {
+      const ctx = await assistContextFor(req);
+      res.json(await assistant.phraseNotes(ctx.notes));
+    }),
+  );
+
+  app.post(
+    "/api/assist/notes/dismiss",
+    handle(async (req, res) => {
+      const { id } = z.object({ id: z.string().min(1).max(200) }).parse(req.body);
+      const { memory } = await storage.getProfile(uid(req));
+      if (!memory.dismissedNotes.includes(id)) await storage.saveProfile(uid(req), { memory: { ...memory, dismissedNotes: [...memory.dismissedNotes, id].slice(-500) } });
+      res.status(204).end();
+    }),
+  );
+
+  app.get(
+    "/api/assist/summary",
+    handle(async (req, res) => {
+      res.json(await assistant.summary(await assistContextFor(req, "clinician")));
+    }),
+  );
+
+  // ---------------------------------------------------------------- What Aura remembers
+
+  app.get("/api/memory", handle(async (req, res) => res.json((await storage.getProfile(uid(req))).memory)));
+
+  app.post(
+    "/api/memory/life-events",
+    handle(async (req, res) => {
+      const input = lifeEventInput.parse(req.body);
+      const { memory } = await storage.getProfile(uid(req));
+      const event = { ...input, id: globalThis.crypto.randomUUID() };
+      const lifeEvents = [...memory.lifeEvents, event].sort((a, b) => a.date.localeCompare(b.date)).slice(-200);
+      await storage.saveProfile(uid(req), { memory: { ...memory, lifeEvents } });
+      res.status(201).json(event);
+    }),
+  );
+
+  app.delete(
+    "/api/memory/life-events/:id",
+    handle(async (req, res) => {
+      const { id } = idParam.parse(req.params);
+      const { memory } = await storage.getProfile(uid(req));
+      const lifeEvents = memory.lifeEvents.filter((e) => e.id !== id);
+      if (lifeEvents.length === memory.lifeEvents.length) return res.status(404).end();
+      await storage.saveProfile(uid(req), { memory: { ...memory, lifeEvents } });
       res.status(204).end();
     }),
   );

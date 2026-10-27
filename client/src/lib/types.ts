@@ -1,3 +1,4 @@
+import type { AssistMemory } from "@shared/assist/types";
 import type { AttackInput, DailyLogInput, MedicationInput, PatternsInput, ProfileInput, SupplementInput } from "@shared/api";
 
 export type Medication = MedicationInput & { id: string };
@@ -8,6 +9,7 @@ export interface ProfileRecord {
   profile: ProfileInput;
   patterns: PatternsInput;
   timezone: string | null;
+  memory?: AssistMemory;
 }
 export interface Period {
   id: string;
