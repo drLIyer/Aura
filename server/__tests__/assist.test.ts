@@ -86,3 +86,23 @@ describe("chat capture", () => {
     await request(a).post("/api/assist/capture").send({ text: "x".repeat(5000) }).expect(400);
   });
 });
+
+describe("ask", () => {
+  it("answers from the signed-in user's records with sources", async () => {
+    const { app: a } = await app();
+    as("alice");
+    const res = await request(a).post("/api/assist/ask").send({ question: "How often am I getting migraines?" }).expect(200);
+    expect(res.body.mode).toBe("basic");
+    expect(res.body.blocks[0].text).toMatch(/^0 migraine days in the last 30 days/);
+    expect(res.body.blocks[0].sources).toEqual([{ kind: "record", label: "Your attack log" }]);
+  });
+
+  it("answers an urgent question in basic mode with the emergency guidance", async () => {
+    const spy = new SpyProvider();
+    const { app: a } = await app(spy);
+    as("alice");
+    const res = await request(a).post("/api/assist/ask").send({ question: "is it normal that my face is drooping" }).expect(200);
+    expect(res.body.screen.urgent).toBe(true);
+    expect(spy.calls).toEqual([]);
+  });
+});

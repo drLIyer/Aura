@@ -1,4 +1,4 @@
-import { ALLEVIATORS, labelOf } from "../engine/domain/catalog";
+import { ALLEVIATORS, SUPPLEMENT_CATALOG, labelOf } from "../engine/domain/catalog";
 import { searchExcerpts } from "../engine/domain/guidelineExcerpts";
 import type { MedicationClass } from "../engine/domain/types";
 import type { Answer, AnswerBlock, AssistContext, SourceRef } from "./types";
@@ -15,7 +15,7 @@ const pct = (p: number) => `${Math.round(p * 100)}%`;
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const times = (rr: number) => `${rr.toFixed(1)}×`;
 
-const CLASS_LABEL: Partial<Record<MedicationClass, string>> = {
+export const CLASS_LABEL: Partial<Record<MedicationClass, string>> = {
   triptan: "triptans",
   ergot: "ergots",
   opioid: "opioids",
@@ -49,9 +49,10 @@ function forecastBlocks(ctx: AssistContext): AnswerBlock[] {
       sources: [rec("Today's forecast")],
     },
   ];
-  if (f.contributors.length) {
+  const raising = f.contributors.filter((c) => c.rr >= 1.05);
+  if (raising.length) {
     blocks.push({
-      text: `What's raising it: ${f.contributors.map((c) => `${c.label} (${times(c.rr)}, from your ${c.via})`).join("; ")}.`,
+      text: `What's raising it: ${raising.map((c) => `${c.label} (${times(c.rr)}, from your ${c.via})`).join("; ")}.`,
       sources: [rec("Today's forecast"), rec("Your trigger estimates")],
     });
   } else {
@@ -170,8 +171,22 @@ function doctorBlocks(ctx: AssistContext): AnswerBlock[] {
   return blocks;
 }
 
+/** What the evidence says about a supplement, from the catalog the supplement rules use. */
+function supplementBlocks(ctx: AssistContext, q: string): AnswerBlock[] | null {
+  const s = SUPPLEMENT_CATALOG.find((x) => q.includes(x.kind) || q.includes(x.label.toLowerCase().split(" (")[0]));
+  if (!s) return null;
+  const blocks: AnswerBlock[] = [{ text: `${s.label} for migraine prevention: ${s.evidence}${s.cautions ? ` ${s.cautions}` : ""}`, sources: [gl("aan-ahs-2012-complementary")] }];
+  const flagged = ctx.recommendations.filter((r) => r.category === "supplement" && `${r.title} ${r.detail}`.toLowerCase().includes(s.kind));
+  for (const r of flagged.slice(0, 2)) blocks.push({ text: `${r.title}: ${r.detail}`, sources: r.sources.map(gl) });
+  if (ctx.profile.pregnant && s.avoidInPregnancy) blocks.push({ text: `${s.label} should be avoided in pregnancy.`, sources: [gl("aan-ahs-2012-complementary")] });
+  blocks.push({ text: "Check with your clinician or pharmacist before starting a supplement, especially alongside other medicines.", sources: [rec("Your medicines and Aura's checks")] });
+  return blocks;
+}
+
 /** "Can I take X", "is X safe": only ever restates what the engine already flagged. */
 function medicineBlocks(ctx: AssistContext, q: string): AnswerBlock[] | null {
+  const supplement = supplementBlocks(ctx, q);
+  if (supplement) return supplement;
   const med = ctx.medications.find((m) => m.name.toLowerCase().split(/[^a-z]+/).some((w) => w.length >= 4 && q.includes(w)));
   const word = med?.name ?? q.match(/\b(ibuprofen|advil|motrin|naproxen|aleve|aspirin|tylenol|acetaminophen|paracetamol|sumatriptan|triptan|excedrin)\b/)?.[0];
   if (!word) return null;
@@ -202,7 +217,7 @@ const INTENTS: Intent[] = [
 
 export function answerQuestion(question: string, ctx: AssistContext): Answer {
   const q = question.toLowerCase().replace(/[’`]/g, "'");
-  const med = /\b(can i|safe|okay|ok to|should i|allowed)\b/.test(q) ? medicineBlocks(ctx, q) : null;
+  const med = /\b(can i|safe|okay|ok to|should i|allowed|does|do|is|works?|help)\b/.test(q) ? medicineBlocks(ctx, q) : null;
   if (med) return { mode: "basic", blocks: med, suggestions: [], fallback: false };
   const intent = INTENTS.find((i) => i.re.test(q));
   if (intent) return { mode: "basic", blocks: intent.answer(ctx, q), suggestions: SUGGESTED_QUESTIONS.filter((s) => !intent.re.test(s.toLowerCase())).slice(0, 3), fallback: false };

@@ -65,15 +65,17 @@ export const GUIDELINE_EXCERPTS: GuidelineExcerpt[] = GUIDELINES.flatMap((g) =>
 );
 
 const words = (s: string) => s.toLowerCase().match(/[a-z0-9]+/g) ?? [];
-const STOP = new Set(['the', 'a', 'an', 'is', 'are', 'my', 'i', 'it', 'to', 'of', 'and', 'or', 'in', 'on', 'for', 'can', 'do', 'does', 'what', 'how', 'why', 'with', 'me', 'am', 'be', 'should', 'this', 'that']);
+const STOP = new Set(['the', 'a', 'an', 'is', 'are', 'my', 'i', 'it', 'to', 'of', 'and', 'or', 'in', 'on', 'for', 'can', 'do', 'does', 'what', 'how', 'why', 'with', 'me', 'am', 'be', 'should', 'this', 'that', 'take', 'taking', 'use', 'using', 'ok', 'okay', 'safe', 'good', 'bad', 'about', 'any', 'have', 'get']);
 
 /** Simple keyword search over excerpt text, topics and source names. */
 export function searchExcerpts(query: string, limit = 6): GuidelineExcerpt[] {
-  const q = words(query).filter((w) => !STOP.has(w));
+  const q = words(query).filter((w) => w.length >= 3 && !STOP.has(w));
   if (!q.length) return [];
+  // Whole words only (so "take" doesn't match "intake"); a topic match counts double.
   const scored = GUIDELINE_EXCERPTS.map((e) => {
-    const hay = `${e.text} ${e.topics.join(' ')} ${e.title}`.toLowerCase();
-    const score = q.reduce((s, w) => s + (hay.includes(w) ? (e.topics.some((t) => t.includes(w)) ? 2 : 1) : 0), 0);
+    const hay = new Set(words(`${e.text} ${e.title}`));
+    const topicWords = new Set(e.topics.flatMap(words));
+    const score = q.reduce((s, w) => s + (topicWords.has(w) ? 2 : hay.has(w) ? 1 : 0), 0);
     return { e, score };
   });
   return scored

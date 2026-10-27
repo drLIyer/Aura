@@ -1,4 +1,5 @@
 import { formatDate } from "../engine/domain/dates";
+import { CLASS_LABEL } from "./ask";
 import type { AnswerBlock, AssistContext, PreVisitSummary, SourceRef } from "./types";
 
 /** Basic-mode pre-visit summary: a fixed layout filled from engine outputs, for the clinician. */
@@ -22,7 +23,7 @@ export function basicSummary(ctx: AssistContext): PreVisitSummary {
   const used = ctx.overuse.byClass.filter((c) => c.days > 0);
   if (used.length) {
     acute.push({
-      text: `Acute medication days (30 days): ${used.map((c) => `${c.cls} ${c.days}/${c.threshold}`).join(", ")}${ctx.overuse.overused.length || ctx.overuse.multipleClassOveruse ? " — at or above ICHD-3 overuse thresholds" : ""}.`,
+      text: `Acute medication days (30 days): ${used.map((c) => `${CLASS_LABEL[c.cls] ?? c.cls} ${c.days}/${c.threshold}`).join(", ")}${ctx.overuse.overused.length || ctx.overuse.multipleClassOveruse ? " — at or above ICHD-3 overuse thresholds" : ""}.`,
       sources: [rec("Medication doses"), gl("ichd-3-moh")],
     });
   }

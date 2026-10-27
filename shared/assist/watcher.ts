@@ -112,10 +112,11 @@ function frequencyNote(state: AppState, today: ISODate): Note[] {
   const prior = [1, 2].map((k) => migraineDays(state.attacks, windowEnding(addDays(today, -30 * k), 30)).size);
   const loggedSince = state.dailyLogs.map((l) => l.date).sort()[0];
   if (!loggedSince || daysBetween(loggedSince, today) < 89) return [];
+  // A real shift beats both earlier periods, not just their average (one quiet month shouldn't make a normal one look high).
   const avg = (prior[0] + prior[1]) / 2;
-  const diff = recent - avg;
-  if (Math.abs(diff) < 3 || (avg > 0 && Math.abs(diff) / avg < 0.5)) return [];
-  const up = diff > 0;
+  const up = recent - Math.max(...prior) >= 2 && recent - avg >= 3 && (avg === 0 || recent / avg >= 1.5);
+  const down = Math.min(...prior) - recent >= 2 && avg - recent >= 3 && recent / avg <= 0.5;
+  if (!up && !down) return [];
   return [
     {
       id: `frequency-${up ? "up" : "down"}:${today.slice(0, 7)}`,
