@@ -4,6 +4,12 @@ import { createStorage } from "./storage";
 import { log, serveStatic, setupVite } from "./vite";
 
 (async () => {
+  // A local .env (see .env.example) for development; hosts such as Replit or Render set these themselves.
+  try {
+    process.loadEnvFile();
+  } catch {
+    // no .env file
+  }
   const storage = await createStorage();
   const mode = authMode();
   const { app, server } = await createApp({ storage, authMode: mode, beforeRoutes: setupAuth });

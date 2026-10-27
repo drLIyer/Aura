@@ -4,6 +4,8 @@ import { queryClient, apiJson } from "./lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Header from "@/components/Header";
+import AssistPanel from "@/components/assist/AssistPanel";
+import type { AttackDraft } from "@shared/assist/types";
 import Navigation from "@/components/Navigation";
 import Dashboard from "@/pages/Dashboard";
 import Guidelines from "@/pages/Guidelines";
@@ -41,6 +43,7 @@ function Shell() {
   const [view, setView] = useState<View>(initialView);
   const [logSection, setLogSection] = useState<LogSection>(null);
   const [date, setDate] = useState(todayLocal());
+  const [attackDraft, setAttackDraft] = useState<AttackDraft | null>(null);
   const signedIn = Boolean(user && user !== "unavailable");
   const { data: profile } = useQuery<ProfileRecord>({ queryKey: ["/api/profile"], enabled: signedIn });
 
@@ -76,7 +79,17 @@ function Shell() {
       <Navigation currentView={view} onViewChange={(v) => navigate(v)} />
       <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
         {view === "dashboard" && <Dashboard date={date} onDateChange={setDate} onNavigate={navigate} />}
-        {view === "log" && <Log date={date} onDateChange={setDate} initialSection={logSection} onSectionHandled={() => setLogSection(null)} onNavigate={navigate} />}
+        {view === "log" && (
+          <Log
+            date={date}
+            onDateChange={setDate}
+            initialSection={logSection}
+            onSectionHandled={() => setLogSection(null)}
+            onNavigate={navigate}
+            draft={attackDraft}
+            onDraftHandled={() => setAttackDraft(null)}
+          />
+        )}
         {(view === "insights" || view === "patterns") && (
           <PatternsSwitch current={view} onChange={(v) => navigate(v)} />
         )}
@@ -88,6 +101,12 @@ function Shell() {
         {view === "report" && <Report date={date} />}
         {view === "guidelines" && <Guidelines />}
       </main>
+      <AssistPanel
+        onEditInForm={(d) => {
+          setAttackDraft(d);
+          navigate("log");
+        }}
+      />
     </div>
   );
 }

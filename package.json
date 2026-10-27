@@ -14,6 +14,7 @@
     "build:demo": "vite build --config vite.demo.config.ts && node script/inline-demo.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
     "@hookform/resolvers": "^3.10.0",
     "@jridgewell/trace-mapping": "^0.3.25",
     "@neondatabase/serverless": "^0.10.4",
