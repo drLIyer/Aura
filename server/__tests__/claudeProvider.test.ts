@@ -150,4 +150,25 @@ describe("Claude provider", () => {
     expect(s.mode).toBe("ai");
     expect(s.sections).toEqual([{ heading: "Overview", items: [{ text: "9 migraine days in the last 30 days.", sources: [{ kind: "record", label: "Migraine frequency" }] }] }]);
   });
+
+  it("reuses a summary while the records are unchanged", async () => {
+    const { client, calls } = fake((params) => ({ content: [text("## Overview\n"), text("9 migraine days.", docIndex(params, "Your records: migraine frequency"))] }));
+    const provider = new ClaudeProvider(client);
+    await provider.summary(ctx);
+    await provider.summary(ctx);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("switches a user to basic mode after too many AI requests in a short time", async () => {
+    const { client, calls } = fake((params) => ({ content: [text("Conflict is your top trigger.", docIndex(params, "Your records: triggers"))] }));
+    const { app } = await createApp({ storage: new MemStorage(), authMode: "dev", assistant: new ClaudeProvider(client) });
+    process.env.AURA_DEV_USER_ID = "busy";
+    for (let i = 0; i < 40; i++) expect((await request(app).post("/api/assist/ask").send({ question: "What are my top triggers?" })).body.mode).toBe("ai");
+    const over = (await request(app).post("/api/assist/ask").send({ question: "What are my top triggers?" })).body;
+    expect(over.mode).toBe("basic");
+    expect(over.notice).toMatch(/basic mode/);
+    expect(calls).toHaveLength(40);
+    process.env.AURA_DEV_USER_ID = "someone-else";
+    expect((await request(app).post("/api/assist/ask").send({ question: "What are my top triggers?" })).body.mode).toBe("ai");
+  });
 });

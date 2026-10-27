@@ -450,6 +450,18 @@ export function registerApi(app: Router, { storage, allowDemo, wearablesClient, 
 
   app.get("/api/assist/status", handle(async (_req, res) => res.json({ ai: assistant.mode === "ai" })));
 
+  // AI calls cost money: past a per-user budget, answer in basic mode for a while instead of failing.
+  const AI_BUDGET = { calls: 40, windowMs: 10 * 60_000 };
+  const aiCalls = new Map<string, number[]>();
+  function providerFor(req: Request): { provider: AssistProvider; notice?: string } {
+    if (assistant.mode !== "ai") return { provider: assistant };
+    const now = Date.now();
+    const recent = (aiCalls.get(uid(req)) ?? []).filter((t) => now - t < AI_BUDGET.windowMs);
+    if (recent.length >= AI_BUDGET.calls) return { provider: basic, notice: "You've asked a lot in a short time, so Aura is using basic mode for a few minutes." };
+    aiCalls.set(uid(req), [...recent, now]);
+    return { provider: assistant };
+  }
+
   // Proposes entries only. Nothing is saved until the patient confirms through the normal routes.
   app.post(
     "/api/assist/capture",
@@ -460,8 +472,9 @@ export function registerApi(app: Router, { storage, allowDemo, wearablesClient, 
       const ctx = buildCaptureContext(state, now);
       // The fixed safety screen runs first. If it fires, the text never goes to a model.
       const screen = screenText(text);
-      const proposal = screen.urgent ? await basic.capture(text, ctx) : await assistant.capture(text, ctx);
-      res.json(sanitizeProposal(proposal, ctx, screen));
+      const { provider, notice } = screen.urgent ? { provider: basic } : providerFor(req);
+      const proposal = await provider.capture(text, ctx);
+      res.json(sanitizeProposal({ ...proposal, ...(notice ? { notice } : {}) }, ctx, screen));
     }),
   );
 
@@ -471,8 +484,9 @@ export function registerApi(app: Router, { storage, allowDemo, wearablesClient, 
       const { question, audience } = z.object({ question: z.string().trim().min(1).max(1000), audience: z.enum(["patient", "clinician"]).default("patient") }).parse(req.body);
       const screen = screenText(question);
       const ctx = await assistContextFor(req, audience);
-      const answer = screen.urgent ? await basic.ask(question, ctx) : await assistant.ask(question, ctx);
-      res.json({ ...answer, screen });
+      const { provider, notice } = screen.urgent ? { provider: basic } : providerFor(req);
+      const answer = await provider.ask(question, ctx);
+      res.json({ ...answer, ...(notice ? { notice } : {}), screen });
     }),
   );
 

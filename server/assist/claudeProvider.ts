@@ -172,10 +172,34 @@ function jsonOut<T>(msg: BetaMessage): T {
 
 const UNAVAILABLE = "AI wasn't available for this, so Aura used basic mode.";
 
+/** Short, stable key for a cache entry (FNV-1a). */
+function hashOf(value: unknown): string {
+  const s = JSON.stringify(value);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193) >>> 0;
+  return `${h.toString(36)}:${s.length}`;
+}
+
 export class ClaudeProvider implements AssistProvider {
   readonly mode = "ai" as const;
   private rules = new RuleProvider();
   private client: MessagesClient;
+  /**
+   * Notes and summaries are requested on every page view; reuse the result while the records
+   * behind it are unchanged, so a visit doesn't become a model call.
+   */
+  private cache = new Map<string, { at: number; value: unknown }>();
+
+  private async memo<T>(key: string, ttlMs: number, make: () => Promise<T>, keep: (v: T) => boolean): Promise<T> {
+    const hit = this.cache.get(key);
+    if (hit && Date.now() - hit.at < ttlMs) return hit.value as T;
+    const value = await make();
+    if (keep(value)) {
+      this.cache.set(key, { at: Date.now(), value });
+      if (this.cache.size > 500) this.cache.delete(this.cache.keys().next().value!);
+    }
+    return value;
+  }
 
   constructor(client?: MessagesClient) {
     this.client = client ?? (new Anthropic() as unknown as MessagesClient);
@@ -268,6 +292,10 @@ export class ClaudeProvider implements AssistProvider {
 
   async phraseNotes(notes: Note[]): Promise<Note[]> {
     if (!notes.length) return notes;
+    return this.memo(`notes:${hashOf(notes.map((n) => [n.id, n.text]))}`, 24 * 3600_000, () => this.phraseNow(notes), (out) => out !== notes);
+  }
+
+  private async phraseNow(notes: Note[]): Promise<Note[]> {
     try {
       const msg = await this.create({
         max_tokens: 3000,
@@ -299,8 +327,12 @@ export class ClaudeProvider implements AssistProvider {
   }
 
   async summary(ctx: AssistContext): Promise<PreVisitSummary> {
+    const docs = [...guidelineDocs(ctx, "summary prevention overuse acute treatment"), ...recordDocs(ctx)];
+    return this.memo(`summary:${hashOf([ctx.today, docs])}`, 12 * 3600_000, () => this.summaryNow(ctx, docs), (s) => s.mode === "ai");
+  }
+
+  private async summaryNow(ctx: AssistContext, docs: GroundingDoc[]): Promise<PreVisitSummary> {
     try {
-      const docs = [...guidelineDocs(ctx, "summary prevention overuse acute treatment"), ...recordDocs(ctx)];
       const msg = await this.create({
         max_tokens: 4000,
         output_config: { effort: "medium" },
