@@ -106,3 +106,38 @@ describe("ask", () => {
     expect(spy.calls).toEqual([]);
   });
 });
+
+describe("what Aura remembers", () => {
+  it("adds, lists and removes life events, per user", async () => {
+    const { app: a } = await app();
+    as("alice");
+    const created = await request(a).post("/api/memory/life-events").send({ date: "2026-10-20", label: "Started a new job", kind: "work" }).expect(201);
+    expect((await request(a).get("/api/memory")).body.lifeEvents).toEqual([{ id: created.body.id, date: "2026-10-20", label: "Started a new job", kind: "work" }]);
+    as("bob");
+    expect((await request(a).get("/api/memory")).body.lifeEvents).toEqual([]);
+    await request(a).delete(`/api/memory/life-events/${created.body.id}`).expect(404);
+    as("alice");
+    await request(a).delete(`/api/memory/life-events/${created.body.id}`).expect(204);
+    expect((await request(a).get("/api/memory")).body.lifeEvents).toEqual([]);
+    await request(a).post("/api/memory/life-events").send({ date: "not a date", label: "x" }).expect(400);
+  });
+
+  it("stops showing a note once dismissed", async () => {
+    const { app: a } = await app();
+    as("alice");
+    const today = new Date().toISOString().slice(0, 10);
+    await request(a).post("/api/medications").send({ name: "Magnesium", cls: "other", role: "preventive", startDate: today }).expect(201);
+    const notes = (await request(a).get(`/api/assist/notes?date=${today}`)).body;
+    expect(notes.map((n: { title: string }) => n.title)).toContain("New medicine: Magnesium");
+    await request(a).post("/api/assist/notes/dismiss").send({ id: notes[0].id }).expect(204);
+    expect((await request(a).get(`/api/assist/notes?date=${today}`)).body).toEqual([]);
+  });
+
+  it("serves a pre-visit summary", async () => {
+    const { app: a } = await app();
+    as("alice");
+    const res = await request(a).get("/api/assist/summary").expect(200);
+    expect(res.body.mode).toBe("basic");
+    expect(res.body.sections[0].heading).toBe("Overview");
+  });
+});

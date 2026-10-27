@@ -13,6 +13,7 @@ import Insights from "@/pages/Insights";
 import Landing from "@/pages/Landing";
 import Log from "@/pages/Log";
 import Medications from "@/pages/Medications";
+import Memory from "@/pages/Memory";
 import Patterns from "@/pages/Patterns";
 import Profile from "@/pages/Profile";
 import Report from "@/pages/Report";
@@ -22,8 +23,8 @@ import type { ProfileRecord } from "@/lib/types";
 import { IS_DEMO } from "@/lib/demo";
 
 export type LogSection = "water" | "meal" | "supplements" | "migraine" | null;
-export type View = "dashboard" | "log" | "insights" | "patterns" | "medications" | "profile" | "wearables" | "report" | "guidelines";
-const VIEWS: View[] = ["dashboard", "log", "insights", "patterns", "medications", "profile", "wearables", "report", "guidelines"];
+export type View = "dashboard" | "log" | "insights" | "patterns" | "medications" | "profile" | "wearables" | "report" | "guidelines" | "memory";
+const VIEWS: View[] = ["dashboard", "log", "insights", "patterns", "medications", "profile", "wearables", "report", "guidelines", "memory"];
 
 function initialView(): View {
   const v = new URLSearchParams(window.location.search).get("view");
@@ -77,7 +78,7 @@ function Shell() {
         </div>
       )}
       <Navigation currentView={view} onViewChange={(v) => navigate(v)} />
-      <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+      <main className="max-w-7xl mx-auto px-4 pt-8 pb-28 sm:px-6 lg:px-8 print:pb-8">
         {view === "dashboard" && <Dashboard date={date} onDateChange={setDate} onNavigate={navigate} />}
         {view === "log" && (
           <Log
@@ -100,6 +101,7 @@ function Shell() {
         {view === "wearables" && <Wearables date={date} />}
         {view === "report" && <Report date={date} />}
         {view === "guidelines" && <Guidelines />}
+        {view === "memory" && <Memory onNavigate={(v) => navigate(v)} />}
       </main>
       <AssistPanel
         onEditInForm={(d) => {

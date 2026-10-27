@@ -124,14 +124,12 @@ export default function AssistPanel({ onEditInForm, openTab, onOpenHandled }: Pr
 
   return (
     <>
-      <Button
-        className="fixed bottom-6 right-6 z-40 h-12 rounded-full shadow-lg print:hidden"
-        onClick={() => setOpen(true)}
-        data-testid="button-talk-to-aura"
-        aria-label="Talk to Aura"
-      >
-        <MessageCircle className="w-5 h-5 mr-2" /> Talk to Aura
-      </Button>
+      {/* The wrapper is fixed: Button's hover styles force position: relative on the button itself. */}
+      <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-40 print:hidden">
+        <Button className="h-12 rounded-full shadow-lg" onClick={() => setOpen(true)} data-testid="button-talk-to-aura" aria-label="Talk to Aura">
+          <MessageCircle className="w-5 h-5 mr-2" /> Talk to Aura
+        </Button>
+      </div>
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent side="right" className="w-full sm:max-w-md flex flex-col gap-4 overflow-y-auto">
           <SheetHeader>

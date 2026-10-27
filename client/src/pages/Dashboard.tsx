@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import CheckInCard from "@/components/CheckInCard";
+import NoticedCard from "@/components/assist/NoticedCard";
 import CheckInDialog from "@/components/CheckInDialog";
 import CycleTrackerCard from "@/components/CycleTrackerCard";
 import { useCycleTracking } from "@/lib/cycle";
@@ -117,6 +118,8 @@ export default function Dashboard({ date, onDateChange, onNavigate }: Props) {
       </div>
 
       <QuickActions onAction={(a) => onNavigate("log", a as LogSection)} />
+
+      <NoticedCard limit={3} onSeeAll={() => onNavigate("memory")} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {tracksCycle && <CycleTrackerCard status={cycle} onLogPeriod={() => setPeriodOpen(true)} />}
