@@ -3,6 +3,7 @@ import { Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import RecommendationsCard from "@/components/RecommendationsCard";
+import PreVisitSummaryCard from "@/components/assist/PreVisitSummaryCard";
 import { formatLocalDateTime, formatLongDate } from "@/lib/dates";
 import type { Medication, Recommendation } from "@/lib/types";
 import { IS_DEMO } from "@/lib/demo";
@@ -64,6 +65,8 @@ export default function Report({ date }: { date: string }) {
           </Button>
         )}
       </div>
+
+      <PreVisitSummaryCard date={date} />
 
       <Section title="Frequency and disability">
         <table className="text-sm w-full">
