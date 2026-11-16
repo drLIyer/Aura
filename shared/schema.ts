@@ -88,6 +88,8 @@ export const profiles = pgTable("profiles", {
   patterns: jsonb("patterns").notNull(),
   /** IANA time zone, e.g. "America/Chicago". */
   timezone: varchar("timezone"),
+  /** Assistant memory: confirmed life events and dismissed notes. */
+  memory: jsonb("memory").notNull().default({}),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 

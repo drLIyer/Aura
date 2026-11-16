@@ -115,6 +115,7 @@ export interface Medication {
   prescriber?: string;
   overTheCounter?: boolean;
   startDate?: ISODate;
+  endDate?: ISODate;
   active: boolean;
 }
 

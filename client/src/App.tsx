@@ -4,6 +4,8 @@ import { queryClient, apiJson } from "./lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Header from "@/components/Header";
+import AssistPanel from "@/components/assist/AssistPanel";
+import type { AttackDraft } from "@shared/assist/types";
 import Navigation from "@/components/Navigation";
 import Dashboard from "@/pages/Dashboard";
 import Guidelines from "@/pages/Guidelines";
@@ -11,6 +13,7 @@ import Insights from "@/pages/Insights";
 import Landing from "@/pages/Landing";
 import Log from "@/pages/Log";
 import Medications from "@/pages/Medications";
+import Memory from "@/pages/Memory";
 import Patterns from "@/pages/Patterns";
 import Profile from "@/pages/Profile";
 import Report from "@/pages/Report";
@@ -20,8 +23,8 @@ import type { ProfileRecord } from "@/lib/types";
 import { IS_DEMO } from "@/lib/demo";
 
 export type LogSection = "water" | "meal" | "supplements" | "migraine" | null;
-export type View = "dashboard" | "log" | "insights" | "patterns" | "medications" | "profile" | "wearables" | "report" | "guidelines";
-const VIEWS: View[] = ["dashboard", "log", "insights", "patterns", "medications", "profile", "wearables", "report", "guidelines"];
+export type View = "dashboard" | "log" | "insights" | "patterns" | "medications" | "profile" | "wearables" | "report" | "guidelines" | "memory";
+const VIEWS: View[] = ["dashboard", "log", "insights", "patterns", "medications", "profile", "wearables", "report", "guidelines", "memory"];
 
 function initialView(): View {
   const v = new URLSearchParams(window.location.search).get("view");
@@ -41,6 +44,7 @@ function Shell() {
   const [view, setView] = useState<View>(initialView);
   const [logSection, setLogSection] = useState<LogSection>(null);
   const [date, setDate] = useState(todayLocal());
+  const [attackDraft, setAttackDraft] = useState<AttackDraft | null>(null);
   const signedIn = Boolean(user && user !== "unavailable");
   const { data: profile } = useQuery<ProfileRecord>({ queryKey: ["/api/profile"], enabled: signedIn });
 
@@ -74,9 +78,19 @@ function Shell() {
         </div>
       )}
       <Navigation currentView={view} onViewChange={(v) => navigate(v)} />
-      <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+      <main className="max-w-7xl mx-auto px-4 pt-8 pb-28 sm:px-6 lg:px-8 print:pb-8">
         {view === "dashboard" && <Dashboard date={date} onDateChange={setDate} onNavigate={navigate} />}
-        {view === "log" && <Log date={date} onDateChange={setDate} initialSection={logSection} onSectionHandled={() => setLogSection(null)} onNavigate={navigate} />}
+        {view === "log" && (
+          <Log
+            date={date}
+            onDateChange={setDate}
+            initialSection={logSection}
+            onSectionHandled={() => setLogSection(null)}
+            onNavigate={navigate}
+            draft={attackDraft}
+            onDraftHandled={() => setAttackDraft(null)}
+          />
+        )}
         {(view === "insights" || view === "patterns") && (
           <PatternsSwitch current={view} onChange={(v) => navigate(v)} />
         )}
@@ -87,7 +101,14 @@ function Shell() {
         {view === "wearables" && <Wearables date={date} />}
         {view === "report" && <Report date={date} />}
         {view === "guidelines" && <Guidelines />}
+        {view === "memory" && <Memory onNavigate={(v) => navigate(v)} />}
       </main>
+      <AssistPanel
+        onEditInForm={(d) => {
+          setAttackDraft(d);
+          navigate("log");
+        }}
+      />
     </div>
   );
 }

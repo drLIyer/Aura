@@ -4,7 +4,7 @@ import { Activity, Calendar, Droplets, Utensils } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import AttackForm from "@/components/AttackForm";
+import AttackForm, { emptyAttack } from "@/components/AttackForm";
 import DateNav from "@/components/DateNav";
 import LoggingPanel from "@/components/LoggingPanel";
 import PeriodLogDialog from "@/components/PeriodLogDialog";
@@ -14,6 +14,7 @@ import { formatLocalDateTime, nowLocalTime, parseLocalDate, todayLocal } from "@
 import { apiJson, invalidateAll } from "@/lib/queryClient";
 import type { Attack, Medication, Period, ProfileRecord, QuickLog, Supplement } from "@/lib/types";
 import type { AttackInput } from "@shared/api";
+import type { AttackDraft } from "@shared/assist/types";
 import type { LogSection, View } from "../App";
 
 type Water = QuickLog & { amount: number };
@@ -26,13 +27,16 @@ interface Props {
   initialSection?: LogSection;
   onSectionHandled?: () => void;
   onNavigate: (view: View) => void;
+  /** An attack proposed in "Talk to Aura", opened here to finish in the full form. */
+  draft?: AttackDraft | null;
+  onDraftHandled?: () => void;
 }
 
 const timeOf = (ts: string) => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-export default function Log({ date, onDateChange, initialSection, onSectionHandled, onNavigate }: Props) {
+export default function Log({ date, onDateChange, initialSection, onSectionHandled, onNavigate, draft, onDraftHandled }: Props) {
   const { toast } = useToast();
-  const [editing, setEditing] = useState<Attack | "new" | null>(null);
+  const [editing, setEditing] = useState<Attack | "new" | { draft: AttackInput } | null>(null);
   const [periodOpen, setPeriodOpen] = useState(false);
   const tracksCycle = useCycleTracking();
   const [mealTime, setMealTime] = useState(nowLocalTime());
@@ -46,6 +50,15 @@ export default function Log({ date, onDateChange, initialSection, onSectionHandl
     onSectionHandled?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSection]);
+
+  useEffect(() => {
+    if (!draft) return;
+    const base = emptyAttack();
+    const start = draft.start ?? base.start;
+    setEditing({ draft: { ...base, ...draft, start, peakSeverity: draft.peakSeverity ?? base.peakSeverity, doses: (draft.doses ?? []).map((d) => ({ ...d, takenAt: d.takenAt || start })) } as AttackInput });
+    onDraftHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft]);
 
   useEffect(() => setMealTime(date === todayLocal() ? nowLocalTime() : "12:30"), [date]);
 
@@ -83,7 +96,7 @@ export default function Log({ date, onDateChange, initialSection, onSectionHandl
     onError: (e: Error) => toast({ title: "Couldn't save periods", description: e.message, variant: "destructive" }),
   });
   const saveAttack = useMutation({
-    mutationFn: (data: AttackInput) => (editing && editing !== "new" ? apiJson(`/api/attacks/${editing.id}`, "PUT", data) : apiJson("/api/attacks", "POST", data)),
+    mutationFn: (data: AttackInput) => (editing && editing !== "new" && "id" in editing ? apiJson(`/api/attacks/${editing.id}`, "PUT", data) : apiJson("/api/attacks", "POST", data)),
     onSuccess: () => {
       setEditing(null);
       invalidateAll();
@@ -93,7 +106,7 @@ export default function Log({ date, onDateChange, initialSection, onSectionHandl
   });
 
   if (editing) {
-    const { id: _id, ...initial } = editing === "new" ? ({} as Attack) : editing;
+    const { id: _id, ...initial } = editing === "new" ? ({} as Attack) : "draft" in editing ? ({ id: "", ...editing.draft } as Attack) : editing;
     return (
       <div className="max-w-3xl mx-auto">
         <AttackForm

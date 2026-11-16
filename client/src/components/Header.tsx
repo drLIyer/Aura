@@ -1,4 +1,4 @@
-import { Brain, LogOut, Pill, UserRound, Watch } from "lucide-react";
+import { BookOpen, Brain, LogOut, Pill, UserRound, Watch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -30,6 +30,7 @@ const ACCOUNT_ITEMS: { view: View; label: string; icon: typeof Pill }[] = [
   { view: "profile", label: "Health profile", icon: UserRound },
   { view: "medications", label: "Medicines & supplements", icon: Pill },
   { view: "wearables", label: "Wearables", icon: Watch },
+  { view: "memory", label: "What Aura remembers", icon: BookOpen },
 ];
 
 export default function Header({ userName, currentView, onNavigate, onLogout }: HeaderProps) {

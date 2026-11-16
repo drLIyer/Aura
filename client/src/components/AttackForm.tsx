@@ -37,7 +37,7 @@ interface Props {
   isSaving?: boolean;
 }
 
-const empty = (): AttackInput => ({
+export const emptyAttack = (): AttackInput => ({
   start: nowLocalDateTime(),
   peakSeverity: 5,
   painLocations: [],
@@ -69,7 +69,7 @@ function YesNo({ value, onChange, label }: { value?: boolean; onChange: (v: bool
 }
 
 export default function AttackForm({ medications, customTriggers = [], initial, onSubmit, onCancel, onManageMedications, isSaving }: Props) {
-  const [a, setA] = useState<AttackInput>(initial ?? empty());
+  const [a, setA] = useState<AttackInput>(initial ?? emptyAttack());
   const [ongoing, setOngoing] = useState(!initial?.end);
   const tracksCycle = useCycleTracking();
   const set = <K extends keyof AttackInput>(k: K, v: AttackInput[K]) => setA((p) => ({ ...p, [k]: v }));
